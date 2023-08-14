@@ -1,0 +1,1 @@
+{"version":3,"file":"cloud_events.d.ts","sourceRoot":"","sources":["../../src/gcpfunction/cloud_events.ts"],"names":[],"mappings":"AAIA,OAAO,EACL,kBAAkB,EAClB,8BAA8B,EAE9B,cAAc,EACf,MAAM,WAAW,CAAC;AAEnB,oBAAY,gCAAgC,GAAG,cAAc,CAAC;AAE9D;;;;;;GAMG;AACH,wBAAgB,sBAAsB,CACpC,EAAE,EAAE,kBAAkB,GAAG,8BAA8B,EACvD,WAAW,GAAE,OAAO,CAAC,gCAAgC,CAAM,GAC1D,8BAA8B,CAEhC"}
