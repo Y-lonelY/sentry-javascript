@@ -1,18 +1,17 @@
-import { getCurrentHub, getDynamicSamplingContextFromClient } from '@sentry/core';
+import { getCurrentHub, getDynamicSamplingContextFromClient, isSentryRequestUrl } from '@sentry/core';
 import type { EventProcessor, Integration, Span } from '@sentry/types';
 import {
   dynamicRequire,
   dynamicSamplingContextToSentryBaggageHeader,
   generateSentryTraceHeader,
   getSanitizedUrlString,
+  LRUMap,
   parseUrl,
   stringMatchesSomePattern,
 } from '@sentry/utils';
-import { LRUMap } from 'lru_map';
 
 import type { NodeClient } from '../../client';
 import { NODE_VERSION } from '../../nodeVersion';
-import { isSentryRequest } from '../utils/http';
 import type {
   DiagnosticsChannel,
   RequestCreateMessage,
@@ -50,7 +49,7 @@ export interface UndiciOptions {
 //
 // function debug(...args: any): void {
 //   // Use a function like this one when debugging inside an AsyncHook callback
-//   // @ts-ignore any
+//   // @ts-expect-error any
 //   writeFileSync('log.out', `${format(...args)}\n`, { flag: 'a' });
 // }
 
@@ -138,7 +137,7 @@ export class Undici implements Integration {
 
     const stringUrl = request.origin ? request.origin.toString() + request.path : request.path;
 
-    if (isSentryRequest(stringUrl) || request.__sentry_span__ !== undefined) {
+    if (isSentryRequestUrl(stringUrl, hub) || request.__sentry_span__ !== undefined) {
       return;
     }
 
@@ -198,7 +197,7 @@ export class Undici implements Integration {
 
     const stringUrl = request.origin ? request.origin.toString() + request.path : request.path;
 
-    if (isSentryRequest(stringUrl)) {
+    if (isSentryRequestUrl(stringUrl, hub)) {
       return;
     }
 
@@ -238,7 +237,7 @@ export class Undici implements Integration {
 
     const stringUrl = request.origin ? request.origin.toString() + request.path : request.path;
 
-    if (isSentryRequest(stringUrl)) {
+    if (isSentryRequestUrl(stringUrl, hub)) {
       return;
     }
 
@@ -273,7 +272,10 @@ function setHeadersOnRequest(
   sentryTrace: string,
   sentryBaggageHeader: string | undefined,
 ): void {
-  if (request.__sentry_has_headers__) {
+  const headerLines = request.headers.split('\r\n');
+  const hasSentryHeaders = headerLines.some(headerLine => headerLine.startsWith('sentry-trace:'));
+
+  if (hasSentryHeaders) {
     return;
   }
 
@@ -281,8 +283,6 @@ function setHeadersOnRequest(
   if (sentryBaggageHeader) {
     request.addHeader('baggage', sentryBaggageHeader);
   }
-
-  request.__sentry_has_headers__ = true;
 }
 
 function createRequestSpan(
@@ -304,6 +304,7 @@ function createRequestSpan(
   }
   return activeSpan?.startChild({
     op: 'http.client',
+    origin: 'auto.http.node.undici',
     description: `${method} ${getSanitizedUrlString(url)}`,
     data,
   });

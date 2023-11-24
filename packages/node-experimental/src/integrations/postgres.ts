@@ -2,6 +2,7 @@ import type { Instrumentation } from '@opentelemetry/instrumentation';
 import { PgInstrumentation } from '@opentelemetry/instrumentation-pg';
 import type { Integration } from '@sentry/types';
 
+import { addOriginToSpan } from '../utils/addOriginToSpan';
 import { NodePerformanceIntegration } from './NodePerformanceIntegration';
 
 /**
@@ -27,6 +28,13 @@ export class Postgres extends NodePerformanceIntegration<void> implements Integr
 
   /** @inheritDoc */
   public setupInstrumentation(): void | Instrumentation[] {
-    return [new PgInstrumentation({})];
+    return [
+      new PgInstrumentation({
+        requireParentSpan: true,
+        requestHook(span) {
+          addOriginToSpan(span, 'auto.db.otel.postgres');
+        },
+      }),
+    ];
   }
 }

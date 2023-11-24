@@ -5,6 +5,8 @@ import type { DataCategory } from './datacategory';
 import type { DsnComponents } from './dsn';
 import type { DynamicSamplingContext, Envelope } from './envelope';
 import type { Event, EventHint } from './event';
+import type { EventProcessor } from './eventprocessor';
+import type { FeedbackEvent } from './feedback';
 import type { Integration, IntegrationClass } from './integration';
 import type { ClientOptions } from './options';
 import type { Scope } from './scope';
@@ -120,6 +122,20 @@ export interface Client<O extends ClientOptions = ClientOptions> {
    */
   flush(timeout?: number): PromiseLike<boolean>;
 
+  /**
+   * Adds an event processor that applies to any event processed by this client.
+   *
+   * TODO (v8): Make this a required method.
+   */
+  addEventProcessor?(eventProcessor: EventProcessor): void;
+
+  /**
+   * Get all added event processors for this client.
+   *
+   * TODO (v8): Make this a required method.
+   */
+  getEventProcessors?(): EventProcessor[];
+
   /** Returns the client's instance of the given integration class, it any. */
   getIntegration<T extends Integration>(integration: IntegrationClass<T>): T | null;
 
@@ -134,7 +150,7 @@ export interface Client<O extends ClientOptions = ClientOptions> {
   addIntegration?(integration: Integration): void;
 
   /** This is an internal function to setup all integrations that should run on the client */
-  setupIntegrations(): void;
+  setupIntegrations(forceInitialize?: boolean): void;
 
   /** Creates an {@link Event} from all inputs to `captureException` and non-primitive inputs to `captureMessage`. */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -165,16 +181,38 @@ export interface Client<O extends ClientOptions = ClientOptions> {
 
   // HOOKS
   // TODO(v8): Make the hooks non-optional.
+  /* eslint-disable @typescript-eslint/unified-signatures */
 
   /**
-   * Register a callback for transaction start and finish.
+   * Register a callback for transaction start.
+   * Receives the transaction as argument.
    */
-  on?(hook: 'startTransaction' | 'finishTransaction', callback: (transaction: Transaction) => void): void;
+  on?(hook: 'startTransaction', callback: (transaction: Transaction) => void): void;
+
+  /**
+   * Register a callback for transaction finish.
+   * Receives the transaction as argument.
+   */
+  on?(hook: 'finishTransaction', callback: (transaction: Transaction) => void): void;
 
   /**
    * Register a callback for transaction start and finish.
    */
   on?(hook: 'beforeEnvelope', callback: (envelope: Envelope) => void): void;
+
+  /**
+   * Register a callback for before sending an event.
+   * This is called right before an event is sent and should not be used to mutate the event.
+   * Receives an Event & EventHint as arguments.
+   */
+  on?(hook: 'beforeSendEvent', callback: (event: Event, hint?: EventHint | undefined) => void): void;
+
+  /**
+   * Register a callback for preprocessing an event,
+   * before it is passed to (global) event processors.
+   * Receives an Event & EventHint as arguments.
+   */
+  on?(hook: 'preprocessEvent', callback: (event: Event, hint?: EventHint | undefined) => void): void;
 
   /**
    * Register a callback for when an event has been sent.
@@ -201,16 +239,45 @@ export interface Client<O extends ClientOptions = ClientOptions> {
   on?(hook: 'otelSpanEnd', callback: (otelSpan: unknown, mutableOptions: { drop: boolean }) => void): void;
 
   /**
-   * Fire a hook event for transaction start and finish. Expects to be given a transaction as the
-   * second argument.
+   * Register a callback when a Feedback event has been prepared.
+   * This should be used to mutate the event. The options argument can hint
+   * about what kind of mutation it expects.
    */
-  emit?(hook: 'startTransaction' | 'finishTransaction', transaction: Transaction): void;
+  on?(
+    hook: 'beforeSendFeedback',
+    callback: (feedback: FeedbackEvent, options?: { includeReplay?: boolean }) => void,
+  ): void;
+
+  /**
+   * Fire a hook event for transaction start.
+   * Expects to be given a transaction as the second argument.
+   */
+  emit?(hook: 'startTransaction', transaction: Transaction): void;
+
+  /**
+   * Fire a hook event for transaction finish.
+   * Expects to be given a transaction as the second argument.
+   */
+  emit?(hook: 'finishTransaction', transaction: Transaction): void;
 
   /*
    * Fire a hook event for envelope creation and sending. Expects to be given an envelope as the
    * second argument.
    */
   emit?(hook: 'beforeEnvelope', envelope: Envelope): void;
+
+  /**
+   * Fire a hook event before sending an event.
+   * This is called right before an event is sent and should not be used to mutate the event.
+   * Expects to be given an Event & EventHint as the second/third argument.
+   */
+  emit?(hook: 'beforeSendEvent', event: Event, hint?: EventHint): void;
+
+  /**
+   * Fire a hook event to process events before they are passed to (global) event processors.
+   * Expects to be given an Event & EventHint as the second/third argument.
+   */
+  emit?(hook: 'preprocessEvent', event: Event, hint?: EventHint): void;
 
   /*
    * Fire a hook event after sending an event. Expects to be given an Event as the
@@ -234,4 +301,13 @@ export interface Client<O extends ClientOptions = ClientOptions> {
    * The option argument may be mutated to drop the span.
    */
   emit?(hook: 'otelSpanEnd', otelSpan: unknown, mutableOptions: { drop: boolean }): void;
+
+  /**
+   * Fire a hook event for after preparing a feedback event. Events to be given
+   * a feedback event as the second argument, and an optional options object as
+   * third argument.
+   */
+  emit?(hook: 'beforeSendFeedback', feedback: FeedbackEvent, options?: { includeReplay?: boolean }): void;
+
+  /* eslint-enable @typescript-eslint/unified-signatures */
 }

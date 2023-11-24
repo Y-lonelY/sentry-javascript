@@ -2,6 +2,7 @@ import type { Instrumentation } from '@opentelemetry/instrumentation';
 import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
 import type { Integration } from '@sentry/types';
 
+import { addOriginToSpan } from '../utils/addOriginToSpan';
 import { NodePerformanceIntegration } from './NodePerformanceIntegration';
 
 /**
@@ -27,6 +28,12 @@ export class Express extends NodePerformanceIntegration<void> implements Integra
 
   /** @inheritDoc */
   public setupInstrumentation(): void | Instrumentation[] {
-    return [new ExpressInstrumentation()];
+    return [
+      new ExpressInstrumentation({
+        requestHook(span) {
+          addOriginToSpan(span, 'auto.http.otel.express');
+        },
+      }),
+    ];
   }
 }

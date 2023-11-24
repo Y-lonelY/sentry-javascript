@@ -4,6 +4,7 @@ import type {
   Primitive,
   Span as SpanInterface,
   SpanContext,
+  SpanOrigin,
   TraceContext,
   Transaction,
 } from '@sentry/types';
@@ -116,29 +117,26 @@ export class Span implements SpanInterface {
   public instrumenter: Instrumenter;
 
   /**
+   * The origin of the span, giving context about what created the span.
+   */
+  public origin?: SpanOrigin;
+
+  /**
    * You should never call the constructor manually, always use `Sentry.startTransaction()`
    * or call `startChild()` on an existing span.
    * @internal
    * @hideconstructor
    * @hidden
    */
-  public constructor(spanContext?: SpanContext) {
-    this.traceId = uuid4();
-    this.spanId = uuid4().substring(16);
-    this.startTimestamp = timestampInSeconds();
-    this.tags = {};
-    this.data = {};
-    this.instrumenter = 'sentry';
+  public constructor(spanContext: SpanContext = {}) {
+    this.traceId = spanContext.traceId || uuid4();
+    this.spanId = spanContext.spanId || uuid4().substring(16);
+    this.startTimestamp = spanContext.startTimestamp || timestampInSeconds();
+    this.tags = spanContext.tags || {};
+    this.data = spanContext.data || {};
+    this.instrumenter = spanContext.instrumenter || 'sentry';
+    this.origin = spanContext.origin || 'manual';
 
-    if (!spanContext) {
-      return this;
-    }
-    if (spanContext.traceId) {
-      this.traceId = spanContext.traceId;
-    }
-    if (spanContext.spanId) {
-      this.spanId = spanContext.spanId;
-    }
     if (spanContext.parentSpanId) {
       this.parentSpanId = spanContext.parentSpanId;
     }
@@ -152,24 +150,24 @@ export class Span implements SpanInterface {
     if (spanContext.description) {
       this.description = spanContext.description;
     }
-    if (spanContext.data) {
-      this.data = spanContext.data;
-    }
-    if (spanContext.tags) {
-      this.tags = spanContext.tags;
+    if (spanContext.name) {
+      this.description = spanContext.name;
     }
     if (spanContext.status) {
       this.status = spanContext.status;
     }
-    if (spanContext.startTimestamp) {
-      this.startTimestamp = spanContext.startTimestamp;
-    }
     if (spanContext.endTimestamp) {
       this.endTimestamp = spanContext.endTimestamp;
     }
-    if (spanContext.instrumenter) {
-      this.instrumenter = spanContext.instrumenter;
-    }
+  }
+
+  /** An alias for `description` of the Span. */
+  public get name(): string {
+    return this.description || '';
+  }
+  /** Update the name of the span. */
+  public set name(name: string) {
+    this.setName(name);
   }
 
   /**
@@ -241,6 +239,13 @@ export class Span implements SpanInterface {
       this.setStatus(spanStatus);
     }
     return this;
+  }
+
+  /**
+   * @inheritDoc
+   */
+  public setName(name: string): void {
+    this.description = name;
   }
 
   /**
@@ -327,6 +332,7 @@ export class Span implements SpanInterface {
       status: this.status,
       tags: Object.keys(this.tags).length > 0 ? this.tags : undefined,
       trace_id: this.traceId,
+      origin: this.origin,
     });
   }
 
@@ -345,6 +351,7 @@ export class Span implements SpanInterface {
     tags?: { [key: string]: Primitive };
     timestamp?: number;
     trace_id: string;
+    origin?: SpanOrigin;
   } {
     return dropUndefinedKeys({
       data: Object.keys(this.data).length > 0 ? this.data : undefined,
@@ -357,6 +364,7 @@ export class Span implements SpanInterface {
       tags: Object.keys(this.tags).length > 0 ? this.tags : undefined,
       timestamp: this.endTimestamp,
       trace_id: this.traceId,
+      origin: this.origin,
     });
   }
 }

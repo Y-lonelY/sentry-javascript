@@ -153,7 +153,7 @@ describe('Integration | coreHandlers | handleAfterSendEvent', () => {
     }));
 
     const client = getCurrentHub().getClient()!;
-    // @ts-ignore make sure to remove this
+    // @ts-expect-error make sure to remove this
     delete client.getTransport()!.send.__sentry__baseTransport__;
 
     const error1 = Error({ event_id: 'err1' });
@@ -410,5 +410,54 @@ describe('Integration | coreHandlers | handleAfterSendEvent', () => {
     await new Promise(process.nextTick);
 
     expect(mockSend).toHaveBeenCalledTimes(0);
+  });
+
+  it('calls beforeErrorSampling if defined', async () => {
+    const error1 = Error({ event_id: 'err1', tags: { replayId: 'replayid1' } });
+    const error2 = Error({ event_id: 'err2', tags: { replayId: 'replayid1' } });
+
+    const beforeErrorSampling = jest.fn(event => event === error2);
+
+    ({ replay } = await resetSdkMock({
+      replayOptions: {
+        stickySession: false,
+        beforeErrorSampling,
+      },
+      sentryOptions: {
+        replaysSessionSampleRate: 0.0,
+        replaysOnErrorSampleRate: 1.0,
+      },
+    }));
+
+    const mockSend = getCurrentHub().getClient()!.getTransport()!.send as unknown as jest.SpyInstance<any>;
+
+    const handler = handleAfterSendEvent(replay);
+
+    expect(replay.recordingMode).toBe('buffer');
+
+    handler(error1, { statusCode: 200 });
+
+    jest.runAllTimers();
+    await new Promise(process.nextTick);
+
+    expect(beforeErrorSampling).toHaveBeenCalledTimes(1);
+
+    // Not flushed yet
+    expect(mockSend).toHaveBeenCalledTimes(0);
+    expect(replay.recordingMode).toBe('buffer');
+    expect(Array.from(replay.getContext().errorIds)).toEqual(['err1']);
+
+    handler(error2, { statusCode: 200 });
+
+    jest.runAllTimers();
+    await new Promise(process.nextTick);
+
+    expect(beforeErrorSampling).toHaveBeenCalledTimes(2);
+
+    // Triggers session
+    expect(mockSend).toHaveBeenCalledTimes(1);
+    expect(replay.recordingMode).toBe('session');
+    expect(replay.isEnabled()).toBe(true);
+    expect(replay.isPaused()).toBe(false);
   });
 });

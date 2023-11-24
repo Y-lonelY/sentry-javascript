@@ -1,12 +1,12 @@
 import type { fullSnapshotEvent, incrementalSnapshotEvent } from '@sentry-internal/rrweb';
 import { EventType } from '@sentry-internal/rrweb';
+import type { ReplayEventWithTime } from '@sentry/browser';
 import type {
   InternalEventContext,
   RecordingEvent,
   ReplayContainer,
   Session,
 } from '@sentry/replay/build/npm/types/types';
-import type { eventWithTime } from '@sentry/replay/build/npm/types/types/rrweb';
 import type { Breadcrumb, Event, ReplayEvent, ReplayRecordingMode } from '@sentry/types';
 import pako from 'pako';
 import type { Page, Request, Response } from 'playwright';
@@ -22,12 +22,12 @@ export type PerformanceSpan = {
   data: Record<string, number>;
 };
 
-export type FullRecordingSnapshot = eventWithTime & {
+export type FullRecordingSnapshot = ReplayEventWithTime & {
   timestamp: 0;
   data: fullSnapshotEvent['data'];
 };
 
-export type IncrementalRecordingSnapshot = eventWithTime & {
+export type IncrementalRecordingSnapshot = ReplayEventWithTime & {
   timestamp: 0;
   data: incrementalSnapshotEvent['data'];
 };
@@ -153,7 +153,7 @@ function isFullSnapshot(event: RecordingEvent): event is FullRecordingSnapshot {
   return event.type === EventType.FullSnapshot;
 }
 
-function isCustomSnapshot(event: RecordingEvent): event is RecordingEvent & { data: CustomRecordingEvent } {
+export function isCustomSnapshot(event: RecordingEvent): event is RecordingEvent & { data: CustomRecordingEvent } {
   return event.type === EventType.Custom;
 }
 
@@ -270,7 +270,7 @@ function getOptionsEvents(replayRequest: Request): CustomRecordingEvent[] {
 export function getDecompressedRecordingEvents(resOrReq: Request | Response): RecordingSnapshot[] {
   const replayRequest = getRequest(resOrReq);
   return (
-    (replayEnvelopeRequestParser(replayRequest, 5) as eventWithTime[])
+    (replayEnvelopeRequestParser(replayRequest, 5) as ReplayEventWithTime[])
       .sort((a, b) => a.timestamp - b.timestamp)
       // source 1 is MouseMove, which is a bit flaky and we don't care about
       .filter(
@@ -301,6 +301,38 @@ const replayEnvelopeRequestParser = (request: Request | null, envelopeIndex = 2)
   const envelope = replayEnvelopeParser(request);
   return envelope[envelopeIndex] as Event;
 };
+
+export function replayEnvelopeIsCompressed(resOrReq: Request | Response): boolean {
+  const request = getRequest(resOrReq);
+
+  // https://develop.sentry.dev/sdk/envelopes/
+  const envelopeBytes = request.postDataBuffer() || '';
+
+  // first, we convert the bugger to string to split and go through the uncompressed lines
+  const envelopeString = envelopeBytes.toString();
+
+  const lines: boolean[] = envelopeString.split('\n').map(line => {
+    try {
+      JSON.parse(line);
+    } catch (error) {
+      // If we fail to parse a line, we _might_ have found a compressed payload,
+      // so let's check if this is actually the case.
+      // This is quite hacky but we can't go through `line` because the prior operations
+      // seem to have altered its binary content. Hence, we take the raw envelope and
+      // look up the place where the zlib compression header(0x78 0x9c) starts
+      for (let i = 0; i < envelopeBytes.length; i++) {
+        if (envelopeBytes[i] === 0x78 && envelopeBytes[i + 1] === 0x9c) {
+          // We found a zlib-compressed payload
+          return true;
+        }
+      }
+    }
+
+    return false;
+  });
+
+  return lines.some(line => line);
+}
 
 export const replayEnvelopeParser = (request: Request | null): unknown[] => {
   // https://develop.sentry.dev/sdk/envelopes/
@@ -401,6 +433,6 @@ function normalizeNumberAttribute(num: number): string {
 
 /** Get a request from either a request or a response */
 function getRequest(resOrReq: Request | Response): Request {
-  // @ts-ignore we check this
+  // @ts-expect-error we check this
   return typeof resOrReq.request === 'function' ? (resOrReq as Response).request() : (resOrReq as Request);
 }

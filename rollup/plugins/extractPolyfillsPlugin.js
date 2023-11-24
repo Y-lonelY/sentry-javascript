@@ -7,13 +7,6 @@ const POLYFILL_NAMES = new Set([
   '_asyncNullishCoalesce',
   '_asyncOptionalChain',
   '_asyncOptionalChainDelete',
-  '_createNamedExportFrom',
-  '_createStarExport',
-  '_interopDefault', // rollup's version
-  '_interopNamespace', // rollup's version
-  '_interopNamespaceDefaultOnly',
-  '_interopRequireDefault', // sucrase's version
-  '_interopRequireWildcard', // sucrase's version
   '_nullishCoalesce',
   '_optionalChain',
   '_optionalChainDelete',
@@ -44,6 +37,13 @@ export function makeExtractPolyfillsPlugin() {
       // We don't want to pull the function definitions out of their actual sourcefiles, just the places where they've
       // been injected
       if (sourceFile.includes('buildPolyfills')) {
+        return null;
+      }
+
+      // The index.js file of the tuils package will include identifiers named after polyfills so we would inject the
+      // polyfills, however that would override the exports so we should just skip that file.
+      const isUtilsPackage = process.cwd().endsWith('packages/utils');
+      if (isUtilsPackage && sourceFile === 'index.js') {
         return null;
       }
 
@@ -194,9 +194,7 @@ function createImportOrRequireNode(polyfillNodes, currentSourceFile, moduleForma
   // relative
   const isUtilsPackage = process.cwd().endsWith('packages/utils');
   const importSource = literal(
-    isUtilsPackage
-      ? `./${path.relative(path.dirname(currentSourceFile), 'buildPolyfills')}`
-      : `@sentry/utils/${moduleFormat}/buildPolyfills`,
+    isUtilsPackage ? `./${path.relative(path.dirname(currentSourceFile), 'buildPolyfills')}` : '@sentry/utils',
   );
 
   // This is the `x, y, z` of inside of `import { x, y, z }` or `var { x, y, z }`

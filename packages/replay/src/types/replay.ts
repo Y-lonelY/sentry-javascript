@@ -1,5 +1,6 @@
 import type {
   Breadcrumb,
+  ErrorEvent,
   FetchBreadcrumbHint,
   HandlerDataFetch,
   ReplayRecordingData,
@@ -10,13 +11,13 @@ import type {
 } from '@sentry/types';
 
 import type { SKIPPED, THROTTLED } from '../util/throttle';
-import type { AllPerformanceEntry } from './performance';
+import type { AllPerformanceEntry, AllPerformanceEntryData, ReplayPerformanceEntry } from './performance';
 import type { ReplayFrameEvent } from './replayFrame';
 import type { ReplayNetworkRequestOrResponse } from './request';
-import type { eventWithTime, recordOptions } from './rrweb';
+import type { ReplayEventWithTime, RrwebRecordOptions } from './rrweb';
 
-export type RecordingEvent = ReplayFrameEvent | eventWithTime;
-export type RecordingOptions = recordOptions;
+export type RecordingEvent = ReplayFrameEvent | ReplayEventWithTime;
+export type RecordingOptions = RrwebRecordOptions;
 
 export interface SendReplayData {
   recordingData: ReplayRecordingData;
@@ -31,7 +32,6 @@ export interface SendReplayData {
 export interface Timeouts {
   sessionIdlePause: number;
   sessionIdleExpire: number;
-  maxSessionLife: number;
 }
 
 /**
@@ -138,6 +138,12 @@ export interface ReplayPluginOptions extends ReplayNetworkOptions {
   useCompression: boolean;
 
   /**
+   * If defined, use this worker URL instead of the default included one for compression.
+   * This will only be used if `useCompression` is not false.
+   */
+  workerUrl?: string;
+
+  /**
    * Block all media (e.g. images, svg, video) in recordings.
    */
   blockAllMedia: boolean;
@@ -188,6 +194,12 @@ export interface ReplayPluginOptions extends ReplayNetworkOptions {
   minReplayDuration: number;
 
   /**
+   * The max. duration (in ms) a replay session may be.
+   * This is capped at max. 60min.
+   */
+  maxReplayDuration: number;
+
+  /**
    * Callback before adding a custom recording event
    *
    * Events added by the underlying DOM recording library can *not* be modified,
@@ -199,6 +211,16 @@ export interface ReplayPluginOptions extends ReplayNetworkOptions {
    * continue to function.
    */
   beforeAddRecordingEvent?: BeforeAddRecordingEvent;
+
+  /**
+   * An optional callback to be called before we decide to sample based on an error.
+   * If specified, this callback will receive an error that was captured by Sentry.
+   * Return `true` to continue sampling for this error, or `false` to ignore this error for replay sampling.
+   * Note that returning `true` means that the `replaysOnErrorSampleRate` will be checked,
+   * not that it will definitely be sampled.
+   * Use this to filter out groups of errors that should def. not be sampled.
+   */
+  beforeErrorSampling?: (event: ErrorEvent) => boolean;
 
   /**
    * _experiments allows users to enable experimental or internal features.
@@ -259,7 +281,12 @@ export interface ReplayIntegrationPrivacyOptions {
 }
 
 // These are optional for ReplayPluginOptions because the plugin sets default values
-type OptionalReplayPluginOptions = Partial<ReplayPluginOptions>;
+type OptionalReplayPluginOptions = Partial<ReplayPluginOptions> & {
+  /**
+   * Mask element attributes that are contained in list
+   */
+  maskAttributes?: string[];
+};
 
 export interface DeprecatedPrivacyOptions {
   /**
@@ -368,12 +395,6 @@ export interface Session {
    * Is the session sampled? `false` if not sampled, otherwise, `session` or `buffer`
    */
   sampled: Sampled;
-
-  /**
-   * If this is false, the session should not be refreshed when it was inactive.
-   * This can be the case if you had a buffered session which is now recording because an error happened.
-   */
-  shouldRefresh: boolean;
 }
 
 export type EventBufferType = 'sync' | 'worker';
@@ -431,13 +452,29 @@ export interface SendBufferedReplayOptions {
 export interface ReplayClickDetector {
   addListeners(): void;
   removeListeners(): void;
+
+  /** Handle a click breadcrumb. */
   handleClick(breadcrumb: Breadcrumb, node: HTMLElement): void;
+  /** Register a mutation that happened at a given time. */
+  registerMutation(timestamp?: number): void;
+  /** Register a scroll that happened at a given time. */
+  registerScroll(timestamp?: number): void;
+  /** Register that a click on an element happened. */
+  registerClick(element: HTMLElement): void;
 }
 
 export interface ReplayContainer {
   eventBuffer: EventBuffer | null;
   clickDetector: ReplayClickDetector | undefined;
-  performanceEvents: AllPerformanceEntry[];
+  /**
+   * List of PerformanceEntry from PerformanceObservers.
+   */
+  performanceEntries: AllPerformanceEntry[];
+
+  /**
+   * List of already processed performance data, ready to be added to replay.
+   */
+  replayPerformanceEntries: ReplayPerformanceEntry<AllPerformanceEntryData>[];
   session: Session | undefined;
   recordingMode: ReplayRecordingMode;
   timeouts: Timeouts;

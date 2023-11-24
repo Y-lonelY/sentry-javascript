@@ -1,12 +1,12 @@
 import 'jsdom-worker';
 
-import pako from 'pako';
-
 import { BASE_TIMESTAMP } from '../..';
 import { EventBufferProxy } from '../../../src/eventBuffer/EventBufferProxy';
+import { decompress } from '../../utils/compression';
+import { getTestEventIncremental } from '../../utils/getTestEvent';
 import { createEventBuffer } from './../../../src/eventBuffer';
 
-const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP, type: 3 };
+const TEST_EVENT = getTestEventIncremental({ timestamp: BASE_TIMESTAMP });
 
 describe('Unit | eventBuffer | EventBufferProxy', () => {
   let consoleErrorSpy: jest.SpyInstance<any>;
@@ -32,7 +32,7 @@ describe('Unit | eventBuffer | EventBufferProxy', () => {
 
     const result = await buffer.finish();
     expect(result).toBeInstanceOf(Uint8Array);
-    const restored = pako.inflate(result as Uint8Array, { to: 'string' });
+    const restored = decompress(result as Uint8Array);
     expect(restored).toEqual(JSON.stringify([TEST_EVENT, TEST_EVENT]));
   });
 

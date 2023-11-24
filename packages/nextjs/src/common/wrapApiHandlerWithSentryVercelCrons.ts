@@ -1,4 +1,4 @@
-import { captureCheckIn, runWithAsyncContext } from '@sentry/core';
+import { addTracingExtensions, captureCheckIn, runWithAsyncContext } from '@sentry/core';
 import type { NextApiRequest } from 'next';
 
 import type { VercelCronsConfig } from './types';
@@ -11,17 +11,20 @@ type EdgeRequest = {
 /**
  * Wraps a function with Sentry crons instrumentation by automaticaly sending check-ins for the given Vercel crons config.
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function wrapApiHandlerWithSentryVercelCrons<F extends (...args: any[]) => any>(
   handler: F,
   vercelCronsConfig: VercelCronsConfig,
 ): F {
   return new Proxy(handler, {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apply: (originalFunction, thisArg, args: any[]) => {
       return runWithAsyncContext(() => {
         if (!args || !args[0]) {
           return originalFunction.apply(thisArg, args);
         }
 
+        addTracingExtensions();
         const [req] = args as [NextApiRequest | EdgeRequest];
 
         let maybePromiseResult;

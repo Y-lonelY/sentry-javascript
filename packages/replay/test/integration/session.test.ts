@@ -3,7 +3,7 @@ import type { Transport } from '@sentry/types';
 
 import {
   DEFAULT_FLUSH_MIN_DELAY,
-  MAX_SESSION_LIFE,
+  MAX_REPLAY_DURATION,
   REPLAY_SESSION_KEY,
   SESSION_IDLE_EXPIRE_DURATION,
   SESSION_IDLE_PAUSE_DURATION,
@@ -18,6 +18,7 @@ import { createOptionsEvent } from '../../src/util/handleRecordingEmit';
 import { BASE_TIMESTAMP } from '../index';
 import type { RecordMock } from '../mocks/mockRrweb';
 import { resetSdkMock } from '../mocks/resetSdkMock';
+import { getTestEventCheckout, getTestEventIncremental } from '../utils/getTestEvent';
 import { useFakeTimers } from '../utils/use-fake-timers';
 
 useFakeTimers();
@@ -140,11 +141,10 @@ describe('Integration | session', () => {
     // Session has become in an idle state
     //
     // This event will put the Replay SDK into a paused state
-    const TEST_EVENT = {
+    const TEST_EVENT = getTestEventIncremental({
       data: { name: 'lost event' },
       timestamp: BASE_TIMESTAMP,
-      type: 3,
-    };
+    });
     mockRecord._emitter(TEST_EVENT);
 
     // performance events can still be collected while recording is stopped
@@ -187,6 +187,10 @@ describe('Integration | session', () => {
       name: 'click',
     });
 
+    const optionsEvent = createOptionsEvent(replay);
+
+    await new Promise(process.nextTick);
+
     // This is not called because we have to start recording
     expect(mockRecord.takeFullSnapshot).not.toHaveBeenCalled();
     expect(mockRecord).toHaveBeenCalledTimes(2);
@@ -197,9 +201,8 @@ describe('Integration | session', () => {
     // Replay does not send immediately because checkout was due to expired session
     expect(replay).not.toHaveLastSentReplay();
 
-    const optionsEvent = createOptionsEvent(replay);
-
     await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
+    await new Promise(process.nextTick);
 
     const newTimestamp = BASE_TIMESTAMP + ELAPSED + 20;
 
@@ -208,20 +211,7 @@ describe('Integration | session', () => {
       recordingData: JSON.stringify([
         { data: { isCheckout: true }, timestamp: newTimestamp, type: 2 },
         optionsEvent,
-        {
-          type: 5,
-          timestamp: newTimestamp,
-          data: {
-            tag: 'breadcrumb',
-            payload: {
-              timestamp: newTimestamp / 1000,
-              type: 'default',
-              category: 'ui.click',
-              message: '<unknown>',
-              data: {},
-            },
-          },
-        },
+        // the click is lost, but that's OK
       ]),
     });
 
@@ -260,11 +250,10 @@ describe('Integration | session', () => {
     // Session has become in an idle state
     //
     // This event will put the Replay SDK into a paused state
-    const TEST_EVENT = {
+    const TEST_EVENT = getTestEventIncremental({
       data: { name: 'lost event' },
       timestamp: BASE_TIMESTAMP,
-      type: 3,
-    };
+    });
     mockRecord._emitter(TEST_EVENT);
 
     // performance events can still be collected while recording is stopped
@@ -333,7 +322,7 @@ describe('Integration | session', () => {
     expect(replay.session).toBe(undefined);
   });
 
-  it('creates a new session if current session exceeds MAX_SESSION_LIFE', async () => {
+  it('creates a new session if current session exceeds MAX_REPLAY_DURATION', async () => {
     jest.clearAllMocks();
 
     const initialSession = { ...replay.session } as Session;
@@ -351,41 +340,43 @@ describe('Integration | session', () => {
       value: new URL(url),
     });
 
-    // Advanced past MAX_SESSION_LIFE
-    const ELAPSED = MAX_SESSION_LIFE + 1;
+    // Advanced past MAX_REPLAY_DURATION
+    const ELAPSED = MAX_REPLAY_DURATION + 1;
     jest.advanceTimersByTime(ELAPSED);
     // Update activity so as to not consider session to be idling
     replay['_updateUserActivity']();
     replay['_updateSessionActivity']();
 
     // This should trigger a new session
-    const TEST_EVENT = {
+    const TEST_EVENT = getTestEventIncremental({
       data: { name: 'lost event' },
       timestamp: ELAPSED,
-      type: 3,
-    };
+    });
     mockRecord._emitter(TEST_EVENT);
 
+    const optionsEvent = createOptionsEvent(replay);
+    const timestampAtRefresh = BASE_TIMESTAMP + ELAPSED;
+
+    jest.runAllTimers();
+    await new Promise(process.nextTick);
+
     expect(replay).not.toHaveSameSession(initialSession);
-    expect(mockRecord.takeFullSnapshot).toHaveBeenCalled();
     expect(replay).not.toHaveLastSentReplay();
-    // @ts-ignore private
-    expect(replay._stopRecording).toBeDefined();
+    expect(replay['_stopRecording']).toBeDefined();
 
     // Now do a click
     domHandler({
       name: 'click',
     });
 
-    const newTimestamp = BASE_TIMESTAMP + ELAPSED;
+    // 20 is for the process.nextTick
+    const newTimestamp = timestampAtRefresh + 20;
 
-    const NEW_TEST_EVENT = {
+    const NEW_TEST_EVENT = getTestEventIncremental({
       data: { name: 'test' },
       timestamp: newTimestamp + DEFAULT_FLUSH_MIN_DELAY + 20,
-      type: 3,
-    };
+    });
     mockRecord._emitter(NEW_TEST_EVENT);
-    const optionsEvent = createOptionsEvent(replay);
 
     jest.runAllTimers();
     await advanceTimers(DEFAULT_FLUSH_MIN_DELAY);
@@ -417,14 +408,15 @@ describe('Integration | session', () => {
     expect(replay.getContext()).toEqual(
       expect.objectContaining({
         initialUrl: 'http://dummy/',
-        initialTimestamp: newTimestamp,
+        initialTimestamp: timestampAtRefresh,
       }),
     );
   });
 
   it('increases segment id after each event', async () => {
     clearSession(replay);
-    replay['_loadAndCheckSession']();
+    replay['_initializeSessionForSampling']();
+    replay.setInitialState();
 
     Object.defineProperty(document, 'visibilityState', {
       configurable: true,
@@ -437,7 +429,7 @@ describe('Integration | session', () => {
     const ELAPSED = 5000;
     await advanceTimers(ELAPSED);
 
-    const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP, type: 2 };
+    const TEST_EVENT = getTestEventCheckout({ timestamp: BASE_TIMESTAMP });
 
     addEvent(replay, TEST_EVENT);
     WINDOW.dispatchEvent(new Event('blur'));

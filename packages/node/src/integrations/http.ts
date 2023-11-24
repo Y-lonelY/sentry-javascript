@@ -1,5 +1,5 @@
 import type { Hub } from '@sentry/core';
-import { getCurrentHub, getDynamicSamplingContextFromClient } from '@sentry/core';
+import { getCurrentHub, getDynamicSamplingContextFromClient, isSentryRequestUrl } from '@sentry/core';
 import type {
   DynamicSamplingContext,
   EventProcessor,
@@ -12,16 +12,16 @@ import {
   fill,
   generateSentryTraceHeader,
   logger,
+  LRUMap,
   stringMatchesSomePattern,
 } from '@sentry/utils';
 import type * as http from 'http';
 import type * as https from 'https';
-import { LRUMap } from 'lru_map';
 
 import type { NodeClient } from '../client';
 import { NODE_VERSION } from '../nodeVersion';
 import type { RequestMethod, RequestMethodArgs, RequestOptions } from './utils/http';
-import { cleanSpanDescription, extractRawUrl, extractUrl, isSentryRequest, normalizeRequestArgs } from './utils/http';
+import { cleanSpanDescription, extractRawUrl, extractUrl, normalizeRequestArgs } from './utils/http';
 
 interface TracingOptions {
   /**
@@ -34,6 +34,8 @@ interface TracingOptions {
    * array, and only attach tracing headers if a match was found.
    *
    * @deprecated Use top level `tracePropagationTargets` option instead.
+   * This option will be removed in v8.
+   *
    * ```
    * Sentry.init({
    *   tracePropagationTargets: ['api.site.com'],
@@ -236,7 +238,7 @@ function _createWrappedRequestMethodFactory(
       const requestUrl = extractUrl(requestOptions);
 
       // we don't want to record requests to Sentry as either breadcrumbs or spans, so just use the original method
-      if (isSentryRequest(requestUrl)) {
+      if (isSentryRequestUrl(requestUrl, getCurrentHub())) {
         return originalRequestMethod.apply(httpModule, requestArgs);
       }
 
@@ -249,6 +251,7 @@ function _createWrappedRequestMethodFactory(
       const requestSpan = shouldCreateSpan(rawRequestUrl)
         ? parentSpan?.startChild({
             op: 'http.client',
+            origin: 'auto.http.node.http',
             description: `${data['http.method']} ${data.url}`,
             data,
           })

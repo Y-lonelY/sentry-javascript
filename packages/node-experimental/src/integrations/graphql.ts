@@ -2,6 +2,7 @@ import type { Instrumentation } from '@opentelemetry/instrumentation';
 import { GraphQLInstrumentation } from '@opentelemetry/instrumentation-graphql';
 import type { Integration } from '@sentry/types';
 
+import { addOriginToSpan } from '../utils/addOriginToSpan';
 import { NodePerformanceIntegration } from './NodePerformanceIntegration';
 
 /**
@@ -30,6 +31,9 @@ export class GraphQL extends NodePerformanceIntegration<void> implements Integra
     return [
       new GraphQLInstrumentation({
         ignoreTrivialResolveSpans: true,
+        responseHook(span) {
+          addOriginToSpan(span, 'auto.graphql.otel.graphql');
+        },
       }),
     ];
   }

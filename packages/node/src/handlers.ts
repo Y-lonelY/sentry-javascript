@@ -16,6 +16,7 @@ import {
   dropUndefinedKeys,
   extractPathForTransaction,
   isString,
+  isThenable,
   logger,
   normalize,
   tracingContextFromHeaders,
@@ -71,6 +72,7 @@ export function tracingHandler(): (
       {
         name,
         op: 'http.server',
+        origin: 'auto.http.node.tracingHandler',
         ...traceparentData,
         metadata: {
           dynamicSamplingContext: traceparentData && !dynamicSamplingContext ? {} : dynamicSamplingContext,
@@ -197,10 +199,8 @@ export function requestHandler(
         const client = currentHub.getClient<NodeClient>();
         if (isAutoSessionTrackingEnabled(client)) {
           const scope = currentHub.getScope();
-          if (scope) {
-            // Set `status` of `RequestSession` to Ok, at the beginning of the request
-            scope.setRequestSession({ status: 'ok' });
-          }
+          // Set `status` of `RequestSession` to Ok, at the beginning of the request
+          scope.setRequestSession({ status: 'ok' });
         }
       });
 
@@ -327,7 +327,7 @@ interface SentryTrpcMiddlewareOptions {
 
 interface TrpcMiddlewareArguments<T> {
   path: string;
-  type: 'query' | 'mutation' | 'subscription';
+  type: string;
   next: () => T;
   rawInput: unknown;
 }
@@ -359,7 +359,49 @@ export function trpcMiddleware(options: SentryTrpcMiddlewareOptions = {}) {
       sentryTransaction.setContext('trpc', trpcContext);
     }
 
-    return next();
+    function shouldCaptureError(e: unknown): boolean {
+      if (typeof e === 'object' && e && 'code' in e) {
+        // Is likely TRPCError - we only want to capture internal server errors
+        return e.code === 'INTERNAL_SERVER_ERROR';
+      } else {
+        // Is likely random error that bubbles up
+        return true;
+      }
+    }
+
+    function handleErrorCase(e: unknown): void {
+      if (shouldCaptureError(e)) {
+        captureException(e, scope => {
+          scope.addEventProcessor(event => {
+            addExceptionMechanism(event, {
+              handled: false,
+            });
+            return event;
+          });
+
+          return scope;
+        });
+      }
+    }
+
+    let maybePromiseResult;
+
+    try {
+      maybePromiseResult = next();
+    } catch (e) {
+      handleErrorCase(e);
+      throw e;
+    }
+
+    if (isThenable(maybePromiseResult)) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      Promise.resolve(maybePromiseResult).then(null, e => {
+        handleErrorCase(e);
+      });
+    }
+
+    // We return the original promise just to be safe.
+    return maybePromiseResult;
   };
 }
 

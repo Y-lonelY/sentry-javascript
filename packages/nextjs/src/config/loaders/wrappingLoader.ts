@@ -3,6 +3,7 @@ import { stringMatchesSomePattern } from '@sentry/utils';
 import * as chalk from 'chalk';
 import * as fs from 'fs';
 import * as path from 'path';
+import type { RollupBuild, RollupError } from 'rollup';
 import { rollup } from 'rollup';
 
 import type { VercelCronsConfig } from '../../common/types';
@@ -14,9 +15,6 @@ const SENTRY_WRAPPER_MODULE_NAME = 'sentry-wrapper-module';
 // Needs to end in .cjs in order for the `commonjs` plugin to pick it up
 const WRAPPING_TARGET_MODULE_NAME = '__SENTRY_WRAPPING_TARGET_FILE__.cjs';
 
-// Non-public API. Can be found here: https://github.com/vercel/next.js/blob/46151dd68b417e7850146d00354f89930d10b43b/packages/next/src/client/components/request-async-storage.ts
-const NEXTJS_REQUEST_ASYNC_STORAGE_MODULE_PATH = 'next/dist/client/components/request-async-storage';
-
 const apiWrapperTemplatePath = path.resolve(__dirname, '..', 'templates', 'apiWrapperTemplate.js');
 const apiWrapperTemplateCode = fs.readFileSync(apiWrapperTemplatePath, { encoding: 'utf8' });
 
@@ -26,8 +24,6 @@ const pageWrapperTemplateCode = fs.readFileSync(pageWrapperTemplatePath, { encod
 const middlewareWrapperTemplatePath = path.resolve(__dirname, '..', 'templates', 'middlewareWrapperTemplate.js');
 const middlewareWrapperTemplateCode = fs.readFileSync(middlewareWrapperTemplatePath, { encoding: 'utf8' });
 
-const requestAsyncStorageShimPath = path.resolve(__dirname, '..', 'templates', 'requestAsyncStorageShim.js');
-const requestAsyncStorageModuleExists = moduleExists(NEXTJS_REQUEST_ASYNC_STORAGE_MODULE_PATH);
 let showedMissingAsyncStorageModuleWarning = false;
 
 const sentryInitWrapperTemplatePath = path.resolve(__dirname, '..', 'templates', 'sentryInitWrapperTemplate.js');
@@ -41,24 +37,19 @@ const serverComponentWrapperTemplatePath = path.resolve(
 );
 const serverComponentWrapperTemplateCode = fs.readFileSync(serverComponentWrapperTemplatePath, { encoding: 'utf8' });
 
-type LoaderOptions = {
+const routeHandlerWrapperTemplatePath = path.resolve(__dirname, '..', 'templates', 'routeHandlerWrapperTemplate.js');
+const routeHandlerWrapperTemplateCode = fs.readFileSync(routeHandlerWrapperTemplatePath, { encoding: 'utf8' });
+
+export type WrappingLoaderOptions = {
   pagesDir: string;
   appDir: string;
   pageExtensionRegex: string;
   excludeServerRoutes: Array<RegExp | string>;
-  wrappingTargetKind: 'page' | 'api-route' | 'middleware' | 'server-component' | 'sentry-init';
+  wrappingTargetKind: 'page' | 'api-route' | 'middleware' | 'server-component' | 'sentry-init' | 'route-handler';
   sentryConfigFilePath?: string;
   vercelCronsConfig?: VercelCronsConfig;
+  nextjsRequestAsyncStorageModulePath?: string;
 };
-
-function moduleExists(id: string): boolean {
-  try {
-    require.resolve(id);
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
 
 /**
  * Replace the loaded file with a wrapped version the original file. In the wrapped version, the original file is loaded,
@@ -67,8 +58,9 @@ function moduleExists(id: string): boolean {
  */
 // eslint-disable-next-line complexity
 export default function wrappingLoader(
-  this: LoaderThis<LoaderOptions>,
+  this: LoaderThis<WrappingLoaderOptions>,
   userCode: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   userModuleSourceMap: any,
 ): void {
   // We know one or the other will be defined, depending on the version of webpack being used
@@ -80,6 +72,7 @@ export default function wrappingLoader(
     wrappingTargetKind,
     sentryConfigFilePath,
     vercelCronsConfig,
+    nextjsRequestAsyncStorageModulePath,
   } = 'getOptions' in this ? this.getOptions() : this.query;
 
   this.async();
@@ -96,7 +89,12 @@ export default function wrappingLoader(
       const sentryConfigImportPath = path
         .relative(path.dirname(this.resourcePath), sentryConfigFilePath)
         .replace(/\\/g, '/');
-      templateCode = templateCode.replace(/__SENTRY_CONFIG_IMPORT_PATH__/g, sentryConfigImportPath);
+
+      // path.relative() may return something like `sentry.server.config.js` which is not allowed. Imports from the
+      // current directory need to start with './'.This is why we prepend the path with './', which should always again
+      // be a valid relative path.
+      // https://github.com/getsentry/sentry-javascript/issues/8798
+      templateCode = templateCode.replace(/__SENTRY_CONFIG_IMPORT_PATH__/g, `./${sentryConfigImportPath}`);
     } else {
       // Bail without doing any wrapping
       this.callback(null, userCode, userModuleSourceMap);
@@ -104,12 +102,11 @@ export default function wrappingLoader(
     }
   } else if (wrappingTargetKind === 'page' || wrappingTargetKind === 'api-route') {
     // Get the parameterized route name from this page's filepath
-    const parameterizedPagesRoute = path.posix
-      .normalize(
-        path
-          // Get the path of the file insde of the pages directory
-          .relative(pagesDir, this.resourcePath),
-      )
+    const parameterizedPagesRoute = path
+      // Get the path of the file insde of the pages directory
+      .relative(pagesDir, this.resourcePath)
+      // Replace all backslashes with forward slashes (windows)
+      .replace(/\\/g, '/')
       // Add a slash at the beginning
       .replace(/(.*)/, '/$1')
       // Pull off the file extension
@@ -139,14 +136,17 @@ export default function wrappingLoader(
 
     // Inject the route and the path to the file we're wrapping into the template
     templateCode = templateCode.replace(/__ROUTE__/g, parameterizedPagesRoute.replace(/\\/g, '\\\\'));
-  } else if (wrappingTargetKind === 'server-component') {
+  } else if (wrappingTargetKind === 'server-component' || wrappingTargetKind === 'route-handler') {
     // Get the parameterized route name from this page's filepath
-    const parameterizedPagesRoute = path.posix
-      .normalize(path.relative(appDir, this.resourcePath))
+    const parameterizedPagesRoute = path
+      // Get the path of the file insde of the app directory
+      .relative(appDir, this.resourcePath)
+      // Replace all backslashes with forward slashes (windows)
+      .replace(/\\/g, '/')
       // Add a slash at the beginning
       .replace(/(.*)/, '/$1')
       // Pull off the file name
-      .replace(/\/[^/]+\.(js|jsx|tsx)$/, '')
+      .replace(/\/[^/]+\.(js|ts|jsx|tsx)$/, '')
       // Remove routing groups: https://beta.nextjs.org/docs/routing/defining-routes#example-creating-multiple-root-layouts
       .replace(/\/(\(.*?\)\/)+/g, '/')
       // In case all of the above have left us with an empty string (which will happen if we're dealing with the
@@ -168,12 +168,16 @@ export default function wrappingLoader(
       return;
     }
 
-    templateCode = serverComponentWrapperTemplateCode;
+    if (wrappingTargetKind === 'server-component') {
+      templateCode = serverComponentWrapperTemplateCode;
+    } else {
+      templateCode = routeHandlerWrapperTemplateCode;
+    }
 
-    if (requestAsyncStorageModuleExists) {
+    if (nextjsRequestAsyncStorageModulePath !== undefined) {
       templateCode = templateCode.replace(
         /__SENTRY_NEXTJS_REQUEST_ASYNC_STORAGE_SHIM__/g,
-        NEXTJS_REQUEST_ASYNC_STORAGE_MODULE_PATH,
+        nextjsRequestAsyncStorageModulePath,
       );
     } else {
       if (!showedMissingAsyncStorageModuleWarning) {
@@ -185,14 +189,17 @@ export default function wrappingLoader(
         );
         showedMissingAsyncStorageModuleWarning = true;
       }
-      templateCode = templateCode.replace(/__SENTRY_NEXTJS_REQUEST_ASYNC_STORAGE_SHIM__/g, requestAsyncStorageShimPath);
+      templateCode = templateCode.replace(
+        /__SENTRY_NEXTJS_REQUEST_ASYNC_STORAGE_SHIM__/g,
+        '@sentry/nextjs/esm/config/templates/requestAsyncStorageShim.js',
+      );
     }
 
     templateCode = templateCode.replace(/__ROUTE__/g, parameterizedPagesRoute.replace(/\\/g, '\\\\'));
 
     const componentTypeMatch = path.posix
       .normalize(path.relative(appDir, this.resourcePath))
-      .match(/\/?([^/]+)\.(?:js|jsx|tsx)$/);
+      .match(/\/?([^/]+)\.(?:js|ts|jsx|tsx)$/);
 
     if (componentTypeMatch && componentTypeMatch[1]) {
       let componentType;
@@ -261,87 +268,105 @@ export default function wrappingLoader(
 async function wrapUserCode(
   wrapperCode: string,
   userModuleCode: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   userModuleSourceMap: any,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<{ code: string; map?: any }> {
-  const rollupBuild = await rollup({
-    input: SENTRY_WRAPPER_MODULE_NAME,
+  const wrap = (withDefaultExport: boolean): Promise<RollupBuild> =>
+    rollup({
+      input: SENTRY_WRAPPER_MODULE_NAME,
 
-    plugins: [
-      // We're using a simple custom plugin that virtualizes our wrapper module and the user module, so we don't have to
-      // mess around with file paths and so that we can pass the original user module source map to rollup so that
-      // rollup gives us a bundle with correct source mapping to the original file
-      {
-        name: 'virtualize-sentry-wrapper-modules',
-        resolveId: id => {
-          if (id === SENTRY_WRAPPER_MODULE_NAME || id === WRAPPING_TARGET_MODULE_NAME) {
-            return id;
-          } else {
-            return null;
-          }
+      plugins: [
+        // We're using a simple custom plugin that virtualizes our wrapper module and the user module, so we don't have to
+        // mess around with file paths and so that we can pass the original user module source map to rollup so that
+        // rollup gives us a bundle with correct source mapping to the original file
+        {
+          name: 'virtualize-sentry-wrapper-modules',
+          resolveId: id => {
+            if (id === SENTRY_WRAPPER_MODULE_NAME || id === WRAPPING_TARGET_MODULE_NAME) {
+              return id;
+            } else {
+              return null;
+            }
+          },
+          load(id) {
+            if (id === SENTRY_WRAPPER_MODULE_NAME) {
+              return withDefaultExport ? wrapperCode : wrapperCode.replace('export { default } from', 'export {} from');
+            } else if (id === WRAPPING_TARGET_MODULE_NAME) {
+              return {
+                code: userModuleCode,
+                map: userModuleSourceMap, // give rollup acces to original user module source map
+              };
+            } else {
+              return null;
+            }
+          },
         },
-        load(id) {
-          if (id === SENTRY_WRAPPER_MODULE_NAME) {
-            return wrapperCode;
-          } else if (id === WRAPPING_TARGET_MODULE_NAME) {
-            return {
-              code: userModuleCode,
-              map: userModuleSourceMap, // give rollup acces to original user module source map
-            };
-          } else {
-            return null;
-          }
-        },
+
+        // People may use `module.exports` in their API routes or page files. Next.js allows that and we also need to
+        // handle that correctly so we let a plugin to take care of bundling cjs exports for us.
+        commonjs({
+          sourceMap: true,
+          strictRequires: true, // Don't hoist require statements that users may define
+          ignoreDynamicRequires: true, // Don't break dynamic requires and things like Webpack's `require.context`
+          ignore() {
+            // We basically only want to use this plugin for handling the case where users export their handlers with module.exports.
+            // This plugin would also be able to convert any `require` into something esm compatible but webpack does that anyways so we just skip that part of the plugin.
+            // (Also, modifying require may break user code)
+            return true;
+          },
+        }),
+      ],
+
+      // We only want to bundle our wrapper module and the wrappee module into one, so we mark everything else as external.
+      external: sourceId => sourceId !== SENTRY_WRAPPER_MODULE_NAME && sourceId !== WRAPPING_TARGET_MODULE_NAME,
+
+      // Prevent rollup from stressing out about TS's use of global `this` when polyfilling await. (TS will polyfill if the
+      // user's tsconfig `target` is set to anything before `es2017`. See https://stackoverflow.com/a/72822340 and
+      // https://stackoverflow.com/a/60347490.)
+      context: 'this',
+
+      // Rollup's path-resolution logic when handling re-exports can go wrong when wrapping pages which aren't at the root
+      // level of the `pages` directory. This may be a bug, as it doesn't match the behavior described in the docs, but what
+      // seems to happen is this:
+      //
+      //   - We try to wrap `pages/xyz/userPage.js`, which contains `export { helperFunc } from '../../utils/helper'`
+      //   - Rollup converts '../../utils/helper' into an absolute path
+      //   - We mark the helper module as external
+      //   - Rollup then converts it back to a relative path, but relative to `pages/` rather than `pages/xyz/`. (This is
+      //     the part which doesn't match the docs. They say that Rollup will use the common ancestor of all modules in the
+      //     bundle as the basis for the relative path calculation, but both our temporary file and the page being wrapped
+      //     live in `pages/xyz/`, and they're the only two files in the bundle, so `pages/xyz/`` should be used as the
+      //     root. Unclear why it's not.)
+      //   - As a result of the miscalculation, our proxy module will include `export { helperFunc } from '../utils/helper'`
+      //     rather than the expected `export { helperFunc } from '../../utils/helper'`, thereby causing a build error in
+      //     nextjs..
+      //
+      // Setting `makeAbsoluteExternalsRelative` to `false` prevents all of the above by causing Rollup to ignore imports of
+      // externals entirely, with the result that their paths remain untouched (which is what we want).
+      makeAbsoluteExternalsRelative: false,
+      onwarn: (_warning, _warn) => {
+        // Suppress all warnings - we don't want to bother people with this output
+        // Might be stuff like "you have unused imports"
+        // _warn(_warning); // uncomment to debug
       },
+    });
 
-      // People may use `module.exports` in their API routes or page files. Next.js allows that and we also need to
-      // handle that correctly so we let a plugin to take care of bundling cjs exports for us.
-      commonjs({
-        sourceMap: true,
-        strictRequires: true, // Don't hoist require statements that users may define
-        ignoreDynamicRequires: true, // Don't break dynamic requires and things like Webpack's `require.context`
-        ignore() {
-          // We want basically only want to use this plugin for handling the case where users export their handlers with module.exports.
-          // This plugin would also be able to convert any `require` into something esm compatible but webpack does that anyways so we just skip that part of the plugin.
-          // (Also, modifying require may break user code)
-          return true;
-        },
-      }),
-    ],
-
-    // We only want to bundle our wrapper module and the wrappee module into one, so we mark everything else as external.
-    external: sourceId => sourceId !== SENTRY_WRAPPER_MODULE_NAME && sourceId !== WRAPPING_TARGET_MODULE_NAME,
-
-    // Prevent rollup from stressing out about TS's use of global `this` when polyfilling await. (TS will polyfill if the
-    // user's tsconfig `target` is set to anything before `es2017`. See https://stackoverflow.com/a/72822340 and
-    // https://stackoverflow.com/a/60347490.)
-    context: 'this',
-
-    // Rollup's path-resolution logic when handling re-exports can go wrong when wrapping pages which aren't at the root
-    // level of the `pages` directory. This may be a bug, as it doesn't match the behavior described in the docs, but what
-    // seems to happen is this:
-    //
-    //   - We try to wrap `pages/xyz/userPage.js`, which contains `export { helperFunc } from '../../utils/helper'`
-    //   - Rollup converts '../../utils/helper' into an absolute path
-    //   - We mark the helper module as external
-    //   - Rollup then converts it back to a relative path, but relative to `pages/` rather than `pages/xyz/`. (This is
-    //     the part which doesn't match the docs. They say that Rollup will use the common ancestor of all modules in the
-    //     bundle as the basis for the relative path calculation, but both our temporary file and the page being wrapped
-    //     live in `pages/xyz/`, and they're the only two files in the bundle, so `pages/xyz/`` should be used as the
-    //     root. Unclear why it's not.)
-    //   - As a result of the miscalculation, our proxy module will include `export { helperFunc } from '../utils/helper'`
-    //     rather than the expected `export { helperFunc } from '../../utils/helper'`, thereby causing a build error in
-    //     nextjs..
-    //
-    // Setting `makeAbsoluteExternalsRelative` to `false` prevents all of the above by causing Rollup to ignore imports of
-    // externals entirely, with the result that their paths remain untouched (which is what we want).
-    makeAbsoluteExternalsRelative: false,
-
-    onwarn: (_warning, _warn) => {
-      // Suppress all warnings - we don't want to bother people with this output
-      // Might be stuff like "you have unused imports"
-      // _warn(_warning); // uncomment to debug
-    },
-  });
+  // Next.js sometimes complains if you define a default export (e.g. in route handlers in dev mode).
+  // This is why we want to avoid unnecessarily creating default exports, even if they're just `undefined`.
+  // For this reason we try to bundle/wrap the user code once including a re-export of `default`.
+  // If the user code didn't have a default export, rollup will throw.
+  // We then try bundling/wrapping agian, but without including a re-export of `default`.
+  let rollupBuild;
+  try {
+    rollupBuild = await wrap(true);
+  } catch (e) {
+    if ((e as RollupError)?.code === 'MISSING_EXPORT') {
+      rollupBuild = await wrap(false);
+    } else {
+      throw e;
+    }
+  }
 
   const finalBundle = await rollupBuild.generate({
     format: 'esm',

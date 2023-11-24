@@ -21,26 +21,28 @@ vi.mock('@sentry/node', async () => {
   };
 });
 
-const mockTrace = vi.fn();
+const mockStartSpan = vi.fn();
 
 vi.mock('@sentry/core', async () => {
   const original = (await vi.importActual('@sentry/core')) as any;
   return {
     ...original,
-    trace: (...args: unknown[]) => {
-      mockTrace(...args);
-      return original.trace(...args);
+    startSpan: (...args: unknown[]) => {
+      mockStartSpan(...args);
+      return original.startSpan(...args);
     },
   };
 });
 
-const mockAddExceptionMechanism = vi.fn();
+const mockAddExceptionMechanism = vi.fn((_e, _m) => {});
 
 vi.mock('@sentry/utils', async () => {
   const original = (await vi.importActual('@sentry/utils')) as any;
   return {
     ...original,
-    addExceptionMechanism: (...args: unknown[]) => mockAddExceptionMechanism(...args),
+    addExceptionMechanism: (...args: unknown[]) => {
+      return mockAddExceptionMechanism(args[0], args[1]);
+    },
   };
 });
 
@@ -127,10 +129,10 @@ beforeAll(() => {
   addTracingExtensions();
 });
 
-beforeEach(() => {
+afterEach(() => {
   mockCaptureException.mockClear();
   mockAddExceptionMechanism.mockClear();
-  mockTrace.mockClear();
+  mockStartSpan.mockClear();
   mockScope = new Scope();
 });
 
@@ -203,11 +205,11 @@ describe.each([
       };
     }
 
-    const wrappedLoad = sentryLoadWrapperFn.call(this, load);
+    const wrappedLoad = sentryLoadWrapperFn(load);
     const res = wrappedLoad(getServerOnlyArgs());
     await expect(res).rejects.toThrow();
 
-    expect(addEventProcessorSpy).toBeCalledTimes(1);
+    expect(addEventProcessorSpy).toHaveBeenCalledTimes(1);
     expect(mockAddExceptionMechanism).toBeCalledTimes(1);
     expect(mockAddExceptionMechanism).toBeCalledWith(
       {},
@@ -226,17 +228,17 @@ describe('wrapLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapLoadWithSentry(load);
     await wrappedLoad(getLoadArgs());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
-    expect(mockTrace).toHaveBeenCalledWith(
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
       {
         op: 'function.sveltekit.load',
+        origin: 'auto.function.sveltekit',
         name: '/users/[id]',
         status: 'ok',
         metadata: {
           source: 'route',
         },
       },
-      expect.any(Function),
       expect.any(Function),
     );
   });
@@ -245,17 +247,17 @@ describe('wrapLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapLoadWithSentry(load);
     await wrappedLoad(getLoadArgsWithoutRoute());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
-    expect(mockTrace).toHaveBeenCalledWith(
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
       {
         op: 'function.sveltekit.load',
+        origin: 'auto.function.sveltekit',
         name: '/users/123',
         status: 'ok',
         metadata: {
           source: 'url',
         },
       },
-      expect.any(Function),
       expect.any(Function),
     );
   });
@@ -264,7 +266,7 @@ describe('wrapLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapLoadWithSentry(wrapLoadWithSentry(wrapLoadWithSentry(load)));
     await wrappedLoad(getLoadArgs());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -279,10 +281,11 @@ describe('wrapServerLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapServerLoadWithSentry(serverLoad);
     await wrappedLoad(getServerOnlyArgs());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
-    expect(mockTrace).toHaveBeenCalledWith(
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
       {
         op: 'function.sveltekit.server.load',
+        origin: 'auto.function.sveltekit',
         name: '/users/[id]',
         parentSampled: true,
         parentSpanId: '1234567890abcdef',
@@ -305,7 +308,6 @@ describe('wrapServerLoadWithSentry calls trace', () => {
         },
       },
       expect.any(Function),
-      expect.any(Function),
     );
   });
 
@@ -313,10 +315,11 @@ describe('wrapServerLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapServerLoadWithSentry(serverLoad);
     await wrappedLoad(getServerArgsWithoutTracingHeaders());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
-    expect(mockTrace).toHaveBeenCalledWith(
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
       {
         op: 'function.sveltekit.server.load',
+        origin: 'auto.function.sveltekit',
         name: '/users/[id]',
         status: 'ok',
         data: {
@@ -327,7 +330,6 @@ describe('wrapServerLoadWithSentry calls trace', () => {
         },
       },
       expect.any(Function),
-      expect.any(Function),
     );
   });
 
@@ -335,10 +337,11 @@ describe('wrapServerLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapServerLoadWithSentry(serverLoad);
     await wrappedLoad(getServerArgsWithoutBaggageHeader());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
-    expect(mockTrace).toHaveBeenCalledWith(
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
       {
         op: 'function.sveltekit.server.load',
+        origin: 'auto.function.sveltekit',
         name: '/users/[id]',
         parentSampled: true,
         parentSpanId: '1234567890abcdef',
@@ -353,21 +356,21 @@ describe('wrapServerLoadWithSentry calls trace', () => {
         },
       },
       expect.any(Function),
-      expect.any(Function),
     );
   });
 
   it('falls back to the raw url if `event.route.id` is not available', async () => {
     const event = getServerOnlyArgs();
-    // @ts-ignore - this is fine (just tests here)
+    // @ts-expect-error - this is fine (just tests here)
     delete event.route;
     const wrappedLoad = wrapServerLoadWithSentry(serverLoad);
     await wrappedLoad(event);
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
-    expect(mockTrace).toHaveBeenCalledWith(
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
       {
         op: 'function.sveltekit.server.load',
+        origin: 'auto.function.sveltekit',
         name: '/users/123',
         parentSampled: true,
         parentSpanId: '1234567890abcdef',
@@ -390,7 +393,6 @@ describe('wrapServerLoadWithSentry calls trace', () => {
         },
       },
       expect.any(Function),
-      expect.any(Function),
     );
   });
 
@@ -398,6 +400,34 @@ describe('wrapServerLoadWithSentry calls trace', () => {
     const wrappedLoad = wrapServerLoadWithSentry(wrapServerLoadWithSentry(serverLoad));
     await wrappedLoad(getServerOnlyArgs());
 
-    expect(mockTrace).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't invoke the proxy set on `event.route`", async () => {
+    const event = getServerOnlyArgs();
+
+    // simulates SvelteKit adding a proxy to `event.route`
+    // https://github.com/sveltejs/kit/blob/e133aba479fa9ba0e7f9e71512f5f937f0247e2c/packages/kit/src/runtime/server/page/load_data.js#L111C3-L124
+    const proxyFn = vi.fn((target: { id: string }, key: string | symbol): any => {
+      return target[key];
+    });
+
+    event.route = new Proxy(event.route, {
+      get: proxyFn,
+    });
+
+    const wrappedLoad = wrapServerLoadWithSentry(serverLoad);
+    await wrappedLoad(event);
+
+    expect(mockStartSpan).toHaveBeenCalledTimes(1);
+    expect(mockStartSpan).toHaveBeenCalledWith(
+      expect.objectContaining({
+        op: 'function.sveltekit.server.load',
+        name: '/users/[id]', // <-- this shows that the route was still accessed
+      }),
+      expect.any(Function),
+    );
+
+    expect(proxyFn).not.toHaveBeenCalled();
   });
 });

@@ -21,6 +21,18 @@ const INTEGRATIONS = {
 export { INTEGRATIONS as Integrations };
 
 export { Replay } from '@sentry/replay';
+export type {
+  ReplayEventType,
+  ReplayEventWithTime,
+  ReplayBreadcrumbFrame,
+  ReplayBreadcrumbFrameEvent,
+  ReplayOptionFrameEvent,
+  ReplayFrame,
+  ReplayFrameEvent,
+  ReplaySpanFrame,
+  ReplaySpanFrameEvent,
+} from '@sentry/replay';
+
 export {
   BrowserTracing,
   defaultRequestInstrumentationOptions,
@@ -29,6 +41,8 @@ export {
 export type { RequestInstrumentationOptions } from '@sentry-internal/tracing';
 export {
   addTracingExtensions,
+  setMeasurement,
+  // eslint-disable-next-line deprecation/deprecation
   extractTraceparentData,
   getActiveTransaction,
   spanStatusfromHttpCode,

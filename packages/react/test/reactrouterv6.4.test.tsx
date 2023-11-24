@@ -16,7 +16,7 @@ import { reactRouterV6Instrumentation, wrapCreateBrowserRouter } from '../src';
 import type { CreateRouterFunction } from '../src/types';
 
 beforeAll(() => {
-  // @ts-ignore need to override global Request because it's not in the jest environment (even with an
+  // @ts-expect-error need to override global Request because it's not in the jest environment (even with an
   // `@jest-environment jsdom` directive, for some reason)
   global.Request = Request;
 });
@@ -63,13 +63,14 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(1);
       expect(mockStartTransaction).toHaveBeenCalledWith({
         name: '/',
         op: 'pageload',
+        origin: 'auto.pageload.react.reactrouterv6',
         tags: {
           'routing.instrumentation': 'react-router-v6',
         },
@@ -99,13 +100,14 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(2);
       expect(mockStartTransaction).toHaveBeenLastCalledWith({
         name: '/about',
         op: 'navigation',
+        origin: 'auto.navigation.react.reactrouterv6',
         tags: { 'routing.instrumentation': 'react-router-v6' },
         metadata: { source: 'route' },
       });
@@ -137,13 +139,14 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(2);
       expect(mockStartTransaction).toHaveBeenLastCalledWith({
         name: '/about/us',
         op: 'navigation',
+        origin: 'auto.navigation.react.reactrouterv6',
         tags: { 'routing.instrumentation': 'react-router-v6' },
         metadata: { source: 'route' },
       });
@@ -175,13 +178,14 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(2);
       expect(mockStartTransaction).toHaveBeenLastCalledWith({
         name: '/about/:page',
         op: 'navigation',
+        origin: 'auto.navigation.react.reactrouterv6',
         tags: { 'routing.instrumentation': 'react-router-v6' },
         metadata: { source: 'route' },
       });
@@ -225,13 +229,14 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(2);
       expect(mockStartTransaction).toHaveBeenLastCalledWith({
         name: '/stores/:storeId/products/:productId',
         op: 'navigation',
+        origin: 'auto.navigation.react.reactrouterv6',
         tags: { 'routing.instrumentation': 'react-router-v6' },
         metadata: { source: 'route' },
       });
@@ -259,7 +264,7 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(1);
@@ -293,15 +298,60 @@ describe('React Router v6.4', () => {
         },
       );
 
-      // @ts-ignore router is fine
+      // @ts-expect-error router is fine
       render(<RouterProvider router={router} />);
 
       expect(mockStartTransaction).toHaveBeenCalledTimes(2);
       expect(mockStartTransaction).toHaveBeenLastCalledWith({
         name: '/app/about/us',
         op: 'navigation',
+        origin: 'auto.navigation.react.reactrouterv6',
         tags: { 'routing.instrumentation': 'react-router-v6' },
-        metadata: { source: 'url' },
+        metadata: { source: 'route' },
+      });
+    });
+
+    it('works with parameterized paths and `basename`', () => {
+      const [mockStartTransaction] = createInstrumentation();
+      const sentryCreateBrowserRouter = wrapCreateBrowserRouter(createMemoryRouter as CreateRouterFunction);
+
+      const router = sentryCreateBrowserRouter(
+        [
+          {
+            path: '/',
+            element: <Navigate to="/some-org-id/users/some-user-id" />,
+          },
+          {
+            path: ':orgId',
+            children: [
+              {
+                path: 'users',
+                children: [
+                  {
+                    path: ':userId',
+                    element: <div>User</div>,
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+        {
+          initialEntries: ['/admin'],
+          basename: '/admin',
+        },
+      );
+
+      // @ts-expect-error router is fine
+      render(<RouterProvider router={router} />);
+
+      expect(mockStartTransaction).toHaveBeenCalledTimes(2);
+      expect(mockStartTransaction).toHaveBeenLastCalledWith({
+        name: '/admin/:orgId/users/:userId',
+        op: 'navigation',
+        origin: 'auto.navigation.react.reactrouterv6',
+        tags: { 'routing.instrumentation': 'react-router-v6' },
+        metadata: { source: 'route' },
       });
     });
   });

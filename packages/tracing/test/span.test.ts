@@ -82,6 +82,13 @@ describe('Span', () => {
       span.setData('foo', true);
       expect(span.data.foo).toBe(true);
     });
+
+    test('setName', () => {
+      const span = new Span({});
+      expect(span.description).toBeUndefined();
+      span.setName('foo');
+      expect(span.description).toBe('foo');
+    });
   });
 
   describe('status', () => {
@@ -157,6 +164,7 @@ describe('Span', () => {
         parent_span_id: 'b',
         span_id: 'd',
         trace_id: 'c',
+        origin: 'manual',
       });
     });
   });
@@ -319,6 +327,7 @@ describe('Span', () => {
       expect(context).toStrictEqual({
         span_id: 'd',
         trace_id: 'c',
+        origin: 'manual',
       });
     });
   });

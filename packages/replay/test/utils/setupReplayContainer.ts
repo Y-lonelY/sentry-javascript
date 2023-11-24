@@ -1,3 +1,4 @@
+import { MAX_REPLAY_DURATION } from '../../src/constants';
 import { createEventBuffer } from '../../src/eventBuffer';
 import { ReplayContainer } from '../../src/replay';
 import { clearSession } from '../../src/session/clearSession';
@@ -7,6 +8,7 @@ const DEFAULT_OPTIONS = {
   flushMinDelay: 100,
   flushMaxDelay: 100,
   minReplayDuration: 0,
+  maxReplayDuration: MAX_REPLAY_DURATION,
   stickySession: false,
   sessionSampleRate: 0,
   errorSampleRate: 1,
@@ -42,8 +44,8 @@ export function setupReplayContainer({
   });
 
   clearSession(replay);
+  replay['_initializeSessionForSampling']();
   replay.setInitialState();
-  replay['_loadAndCheckSession']();
   replay['_isEnabled'] = true;
   replay.eventBuffer = createEventBuffer({
     useCompression: options?.useCompression || false,

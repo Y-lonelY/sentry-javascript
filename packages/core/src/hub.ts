@@ -374,11 +374,19 @@ export class Hub implements HubInterface {
     const result = this._callExtensionMethod<Transaction>('startTransaction', context, customSamplingContext);
 
     if (__DEBUG_BUILD__ && !result) {
-      // eslint-disable-next-line no-console
-      console.warn(`Tracing extension 'startTransaction' has not been added. Call 'addTracingExtensions' before calling 'init':
+      const client = this.getClient();
+      if (!client) {
+        // eslint-disable-next-line no-console
+        console.warn(
+          "Tracing extension 'startTransaction' is missing. You should 'init' the SDK before calling 'startTransaction'",
+        );
+      } else {
+        // eslint-disable-next-line no-console
+        console.warn(`Tracing extension 'startTransaction' has not been added. Call 'addTracingExtensions' before calling 'init':
 Sentry.addTracingExtensions();
 Sentry.init({...});
 `);
+      }
     }
 
     return result;
@@ -489,7 +497,7 @@ Sentry.init({...});
   /**
    * Calls global extension method and binding current instance to the function call
    */
-  // @ts-ignore Function lacks ending return statement and return type does not include 'undefined'. ts(2366)
+  // @ts-expect-error Function lacks ending return statement and return type does not include 'undefined'. ts(2366)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _callExtensionMethod<T>(method: string, ...args: any[]): T {
     const carrier = getMainCarrier();

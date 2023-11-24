@@ -1,12 +1,12 @@
 /* eslint-disable @sentry-internal/sdk/no-optional-chaining */
 import type { Span } from '@sentry/core';
-import { getActiveTransaction, getCurrentHub, runWithAsyncContext, trace } from '@sentry/core';
+import { getActiveTransaction, getCurrentHub, runWithAsyncContext, startSpan } from '@sentry/core';
 import { captureException } from '@sentry/node';
 import { addExceptionMechanism, dynamicSamplingContextToSentryBaggageHeader, objectify } from '@sentry/utils';
 import type { Handle, ResolveOptions } from '@sveltejs/kit';
 
 import { isHttpError, isRedirect } from '../common/utils';
-import { getTracePropagationData } from './utils';
+import { flushIfServerless, getTracePropagationData } from './utils';
 
 export type SentryHandleOptions = {
   /**
@@ -57,14 +57,25 @@ function sendErrorToSentry(e: unknown): unknown {
   return objectifiedErr;
 }
 
+const FETCH_PROXY_SCRIPT = `
+    const f = window.fetch;
+    if(f){
+      window._sentryFetchProxy = function(...a){return f(...a)}
+      window.fetch = function(...a){return window._sentryFetchProxy(...a)}
+    }
+`;
+
 export const transformPageChunk: NonNullable<ResolveOptions['transformPageChunk']> = ({ html }) => {
   const transaction = getActiveTransaction();
   if (transaction) {
     const traceparentData = transaction.toTraceparent();
     const dynamicSamplingContext = dynamicSamplingContextToSentryBaggageHeader(transaction.getDynamicSamplingContext());
     const content = `<head>
-      <meta name="sentry-trace" content="${traceparentData}"/>
-      <meta name="baggage" content="${dynamicSamplingContext}"/>`;
+  <meta name="sentry-trace" content="${traceparentData}"/>
+  <meta name="baggage" content="${dynamicSamplingContext}"/>
+  <script>${FETCH_PROXY_SCRIPT}
+  </script>
+  `;
     return html.replace('<head>', content);
   }
 
@@ -107,7 +118,10 @@ export function sentryHandle(handlerOptions?: SentryHandleOptions): Handle {
   return sentryRequestHandler;
 }
 
-function instrumentHandle({ event, resolve }: Parameters<Handle>[0], options: SentryHandleOptions): ReturnType<Handle> {
+async function instrumentHandle(
+  { event, resolve }: Parameters<Handle>[0],
+  options: SentryHandleOptions,
+): Promise<Response> {
   if (!event.route?.id && !options.handleUnknownRoutes) {
     return resolve(event);
   }
@@ -115,24 +129,32 @@ function instrumentHandle({ event, resolve }: Parameters<Handle>[0], options: Se
   const { dynamicSamplingContext, traceparentData, propagationContext } = getTracePropagationData(event);
   getCurrentHub().getScope().setPropagationContext(propagationContext);
 
-  return trace(
-    {
-      op: 'http.server',
-      name: `${event.request.method} ${event.route?.id || event.url.pathname}`,
-      status: 'ok',
-      ...traceparentData,
-      metadata: {
-        source: event.route?.id ? 'route' : 'url',
-        dynamicSamplingContext: traceparentData && !dynamicSamplingContext ? {} : dynamicSamplingContext,
+  try {
+    const resolveResult = await startSpan(
+      {
+        op: 'http.server',
+        origin: 'auto.http.sveltekit',
+        name: `${event.request.method} ${event.route?.id || event.url.pathname}`,
+        status: 'ok',
+        ...traceparentData,
+        metadata: {
+          source: event.route?.id ? 'route' : 'url',
+          dynamicSamplingContext: traceparentData && !dynamicSamplingContext ? {} : dynamicSamplingContext,
+        },
       },
-    },
-    async (span?: Span) => {
-      const res = await resolve(event, { transformPageChunk });
-      if (span) {
-        span.setHttpStatus(res.status);
-      }
-      return res;
-    },
-    sendErrorToSentry,
-  );
+      async (span?: Span) => {
+        const res = await resolve(event, { transformPageChunk });
+        if (span) {
+          span.setHttpStatus(res.status);
+        }
+        return res;
+      },
+    );
+    return resolveResult;
+  } catch (e: unknown) {
+    sendErrorToSentry(e);
+    throw e;
+  } finally {
+    await flushIfServerless();
+  }
 }

@@ -2,6 +2,7 @@ import type { Instrumentation } from '@opentelemetry/instrumentation';
 import { MongoDBInstrumentation } from '@opentelemetry/instrumentation-mongodb';
 import type { Integration } from '@sentry/types';
 
+import { addOriginToSpan } from '../utils/addOriginToSpan';
 import { NodePerformanceIntegration } from './NodePerformanceIntegration';
 
 /**
@@ -27,6 +28,12 @@ export class Mongo extends NodePerformanceIntegration<void> implements Integrati
 
   /** @inheritDoc */
   public setupInstrumentation(): void | Instrumentation[] {
-    return [new MongoDBInstrumentation({})];
+    return [
+      new MongoDBInstrumentation({
+        responseHook(span) {
+          addOriginToSpan(span, 'auto.db.otel.mongo');
+        },
+      }),
+    ];
   }
 }

@@ -1,11 +1,12 @@
 import {
   addTracingExtensions,
   captureException,
+  flush,
   getCurrentHub,
   runWithAsyncContext,
   startTransaction,
 } from '@sentry/core';
-import { tracingContextFromHeaders } from '@sentry/utils';
+import { addExceptionMechanism, tracingContextFromHeaders } from '@sentry/utils';
 
 import { isNotFoundNavigationError, isRedirectNavigationError } from '../common/nextNavigationErrorUtils';
 import type { ServerComponentContext } from '../common/types';
@@ -19,7 +20,6 @@ export function wrapServerComponentWithSentry<F extends (...args: any[]) => any>
   context: ServerComponentContext,
 ): F {
   addTracingExtensions();
-
   const { componentRoute, componentType } = context;
 
   // Even though users may define server components as async functions, for the client bundles
@@ -43,6 +43,7 @@ export function wrapServerComponentWithSentry<F extends (...args: any[]) => any>
           op: 'function.nextjs',
           name: `${componentType} Server Component (${componentRoute})`,
           status: 'ok',
+          origin: 'auto.function.nextjs',
           ...traceparentData,
           metadata: {
             source: 'component',
@@ -50,9 +51,7 @@ export function wrapServerComponentWithSentry<F extends (...args: any[]) => any>
           },
         });
 
-        if (currentScope) {
-          currentScope.setSpan(transaction);
-        }
+        currentScope.setSpan(transaction);
 
         const handleErrorCase = (e: unknown): void => {
           if (isNotFoundNavigationError(e)) {
@@ -62,7 +61,17 @@ export function wrapServerComponentWithSentry<F extends (...args: any[]) => any>
             // We don't want to report redirects
           } else {
             transaction.setStatus('internal_error');
-            captureException(e);
+
+            captureException(e, scope => {
+              scope.addEventProcessor(event => {
+                addExceptionMechanism(event, {
+                  handled: false,
+                });
+                return event;
+              });
+
+              return scope;
+            });
           }
 
           transaction.finish();
@@ -72,6 +81,7 @@ export function wrapServerComponentWithSentry<F extends (...args: any[]) => any>
           maybePromiseResult = originalFunction.apply(thisArg, args);
         } catch (e) {
           handleErrorCase(e);
+          void flush();
           throw e;
         }
 
@@ -85,12 +95,14 @@ export function wrapServerComponentWithSentry<F extends (...args: any[]) => any>
               handleErrorCase(e);
             },
           );
+          void flush();
 
           // It is very important that we return the original promise here, because Next.js attaches various properties
           // to that promise and will throw if they are not on the returned value.
           return maybePromiseResult;
         } else {
           transaction.finish();
+          void flush();
           return maybePromiseResult;
         }
       });

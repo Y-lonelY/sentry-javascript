@@ -36,11 +36,12 @@ export type {
   EventEnvelopeHeaders,
   EventItem,
   ReplayEnvelope,
+  FeedbackItem,
   SessionEnvelope,
   SessionItem,
   UserFeedbackItem,
   CheckInItem,
-  CheckInEvelope,
+  CheckInEnvelope,
 } from './envelope';
 export type { ExtendedError } from './error';
 export type { Event, EventHint, EventType, ErrorEvent, TransactionEvent } from './event';
@@ -69,6 +70,7 @@ export type {
   Profile,
 } from './profiling';
 export type { ReplayEvent, ReplayRecordingData, ReplayRecordingMode } from './replay';
+export type { FeedbackEvent } from './feedback';
 export type { QueryParams, Request, SanitizedRequestData } from './request';
 export type { Runtime } from './runtime';
 export type { CaptureContext, Scope, ScopeContext } from './scope';
@@ -88,7 +90,7 @@ export type {
 
 // eslint-disable-next-line deprecation/deprecation
 export type { Severity, SeverityLevel } from './severity';
-export type { Span, SpanContext } from './span';
+export type { Span, SpanContext, SpanOrigin } from './span';
 export type { StackFrame } from './stackframe';
 export type { Stacktrace, StackParser, StackLineParser, StackLineParserFn } from './stacktrace';
 export type { TextEncoderInternal } from './textencoder';
@@ -125,4 +127,4 @@ export type { Instrumenter } from './instrumenter';
 export type { HandlerDataFetch, HandlerDataXhr, SentryXhrData, SentryWrappedXMLHttpRequest } from './instrument';
 
 export type { BrowserClientReplayOptions, BrowserClientProfilingOptions } from './browseroptions';
-export type { CheckIn, MonitorConfig, SerializedCheckIn } from './checkin';
+export type { CheckIn, MonitorConfig, FinishedCheckIn, InProgressCheckIn, SerializedCheckIn } from './checkin';

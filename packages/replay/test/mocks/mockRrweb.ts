@@ -1,6 +1,7 @@
 import type { record as rrwebRecord } from '@sentry-internal/rrweb';
 
-import type { RecordingEvent } from '../../src/types';
+import type { RecordingEvent, ReplayEventWithTime } from '../../src/types';
+import { ReplayEventTypeFullSnapshot, ReplayEventTypeIncrementalSnapshot } from '../../src/types';
 
 type RecordAdditionalProperties = {
   takeFullSnapshot: jest.Mock;
@@ -16,11 +17,11 @@ type RecordAdditionalProperties = {
 
 export type RecordMock = jest.MockedFunction<typeof rrwebRecord> & RecordAdditionalProperties;
 
-function createCheckoutPayload(isCheckout: boolean = true) {
+function createCheckoutPayload(isCheckout: boolean = true): ReplayEventWithTime {
   return {
     data: { isCheckout },
     timestamp: Date.now(),
-    type: isCheckout ? 2 : 3,
+    type: isCheckout ? ReplayEventTypeFullSnapshot : ReplayEventTypeIncrementalSnapshot,
   };
 }
 
@@ -43,6 +44,8 @@ export function mockRrweb(): { record: RecordMock } {
 
   jest.mock('@sentry-internal/rrweb', () => {
     const ActualRrweb = jest.requireActual('@sentry-internal/rrweb');
+
+    mockRecordFn.mirror = ActualRrweb.record.mirror;
 
     return {
       ...ActualRrweb,

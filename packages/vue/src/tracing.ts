@@ -23,6 +23,9 @@ interface VueSentry extends ViewModel {
 const HOOKS: { [key in Operation]: Hook[] } = {
   activate: ['activated', 'deactivated'],
   create: ['beforeCreate', 'created'],
+  // Vue 3
+  unmount: ['beforeUnmount', 'unmounted'],
+  // Vue 2
   destroy: ['beforeDestroy', 'destroyed'],
   mount: ['beforeMount', 'mounted'],
   update: ['beforeUpdate', 'updated'],
@@ -76,6 +79,7 @@ export const createTracingMixins = (options: TracingOptions): Mixins => {
               activeTransaction.startChild({
                 description: 'Application Render',
                 op: `${VUE_OP}.render`,
+                origin: 'auto.ui.vue',
               });
           }
         }
@@ -109,6 +113,7 @@ export const createTracingMixins = (options: TracingOptions): Mixins => {
             this.$_sentrySpans[operation] = activeTransaction.startChild({
               description: `Vue <${name}>`,
               op: `${VUE_OP}.${operation}`,
+              origin: 'auto.ui.vue',
             });
           }
         } else {

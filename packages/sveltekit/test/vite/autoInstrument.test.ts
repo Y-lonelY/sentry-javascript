@@ -12,15 +12,21 @@ let fileContent: string | undefined;
 vi.mock('fs', async () => {
   const actual = await vi.importActual('fs');
   return {
-    // @ts-ignore this exists, I promise!
+    // @ts-expect-error this exists, I promise!
     ...actual,
     promises: {
-      // @ts-ignore this also exists, I promise!
+      // @ts-expect-error this also exists, I promise!
       ...actual.promises,
       readFile: vi.fn().mockImplementation(() => {
         return fileContent || DEFAULT_CONTENT;
       }),
     },
+    existsSync: vi.fn().mockImplementation(id => {
+      if (id === '+page.virtual.ts') {
+        return false;
+      }
+      return true;
+    }),
   };
 });
 
@@ -55,7 +61,7 @@ describe('makeAutoInstrumentationPlugin()', () => {
   ])('transform %s files', (path: string) => {
     it('wraps universal load if `load` option is `true`', async () => {
       const plugin = makeAutoInstrumentationPlugin({ debug: false, load: true, serverLoad: true });
-      // @ts-ignore this exists
+      // @ts-expect-error this exists
       const loadResult = await plugin.load(path);
       expect(loadResult).toEqual(
         'import { wrapLoadWithSentry } from "@sentry/sveltekit";' +
@@ -71,7 +77,7 @@ describe('makeAutoInstrumentationPlugin()', () => {
         load: false,
         serverLoad: false,
       });
-      // @ts-ignore this exists
+      // @ts-expect-error this exists
       const loadResult = await plugin.load(path);
       expect(loadResult).toEqual(null);
     });
@@ -89,7 +95,7 @@ describe('makeAutoInstrumentationPlugin()', () => {
   ])('transform %s files', (path: string) => {
     it('wraps universal load if `load` option is `true`', async () => {
       const plugin = makeAutoInstrumentationPlugin({ debug: false, load: false, serverLoad: true });
-      // @ts-ignore this exists
+      // @ts-expect-error this exists
       const loadResult = await plugin.load(path);
       expect(loadResult).toEqual(
         'import { wrapServerLoadWithSentry } from "@sentry/sveltekit";' +
@@ -105,7 +111,7 @@ describe('makeAutoInstrumentationPlugin()', () => {
         load: false,
         serverLoad: false,
       });
-      // @ts-ignore this exists
+      // @ts-expect-error this exists
       const loadResult = await plugin.load(path);
       expect(loadResult).toEqual(null);
     });
@@ -198,15 +204,20 @@ describe('canWrapLoad', () => {
     'export const loadNotLoad = () => {}; export const prerender = true;',
     'export function aload(){}; export const prerender = true;',
     'export function loader(){}; export const prerender = true;',
-    'let loademe = false; export {loadme}',
+    'let loadme = false; export {loadme}',
     'const a = {load: true}; export {a}',
     'if (s === "load") {}',
     'const a = load ? load : false',
     '// const load = () => {}',
     '/* export const load = () => {} */ export const prerender = true;',
     '/* export const notLoad = () => { const a = getSomething() as load; } */ export const prerender = true;',
-  ])('returns `false` if no load declaration exists', async (_, code) => {
+  ])('returns `false` if no load declaration exists', async code => {
     fileContent = code;
-    expect(await canWrapLoad('+page.ts', false)).toEqual(true);
+    expect(await canWrapLoad('+page.ts', false)).toEqual(false);
+  });
+
+  it("returns `false` if the passed file id doesn't exist", async () => {
+    fileContent = DEFAULT_CONTENT;
+    expect(await canWrapLoad('+page.virtual.ts', false)).toEqual(false);
   });
 });

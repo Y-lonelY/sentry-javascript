@@ -1,9 +1,10 @@
 import 'jsdom-worker';
 
 import { BASE_TIMESTAMP } from '../..';
-import { REPLAY_MAX_EVENT_BUFFER_SIZE } from '../../../src/constants';
+import { MAX_REPLAY_DURATION, REPLAY_MAX_EVENT_BUFFER_SIZE, SESSION_IDLE_PAUSE_DURATION } from '../../../src/constants';
 import type { EventBufferProxy } from '../../../src/eventBuffer/EventBufferProxy';
-import { addEvent } from '../../../src/util/addEvent';
+import { addEvent, shouldAddEvent } from '../../../src/util/addEvent';
+import { getTestEventIncremental } from '../../utils/getTestEvent';
 import { setupReplayContainer } from '../../utils/setupReplayContainer';
 import { useFakeTimers } from '../../utils/use-fake-timers';
 
@@ -21,7 +22,7 @@ describe('Unit | util | addEvent', () => {
 
     await (replay.eventBuffer as EventBufferProxy).ensureWorkerIsLoaded();
 
-    // @ts-ignore Mock this private so it triggers an error
+    // @ts-expect-error Mock this private so it triggers an error
     jest.spyOn(replay.eventBuffer._compression._worker, 'postMessage').mockImplementationOnce(() => {
       return Promise.reject('test worker error');
     });
@@ -40,11 +41,10 @@ describe('Unit | util | addEvent', () => {
       },
     });
 
-    const largeEvent = {
+    const largeEvent = getTestEventIncremental({
       data: { a: 'a'.repeat(REPLAY_MAX_EVENT_BUFFER_SIZE / 3) },
       timestamp: BASE_TIMESTAMP,
-      type: 3,
-    };
+    });
 
     await (replay.eventBuffer as EventBufferProxy).ensureWorkerIsLoaded();
 
@@ -56,5 +56,66 @@ describe('Unit | util | addEvent', () => {
     await addEvent(replay, largeEvent);
 
     expect(replay.isEnabled()).toEqual(false);
+  });
+
+  describe('shouldAddEvent', () => {
+    beforeEach(() => {
+      jest.setSystemTime(BASE_TIMESTAMP);
+    });
+
+    it('returns true by default', () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP });
+
+      expect(shouldAddEvent(replay, event)).toEqual(true);
+    });
+
+    it('returns false when paused', () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP });
+
+      replay.pause();
+
+      expect(shouldAddEvent(replay, event)).toEqual(false);
+    });
+
+    it('returns false when disabled', async () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP });
+
+      await replay.stop();
+
+      expect(shouldAddEvent(replay, event)).toEqual(false);
+    });
+
+    it('returns false if there is no eventBuffer', () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP });
+
+      replay.eventBuffer = null;
+
+      expect(shouldAddEvent(replay, event)).toEqual(false);
+    });
+
+    it('returns false when event is too old', () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP - SESSION_IDLE_PAUSE_DURATION - 1 });
+
+      expect(shouldAddEvent(replay, event)).toEqual(false);
+    });
+
+    it('returns false if event is too long after initial timestamp', () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP + MAX_REPLAY_DURATION + 1 });
+
+      expect(shouldAddEvent(replay, event)).toEqual(false);
+    });
+
+    it('returns true if event is withing max duration after after initial timestamp', () => {
+      const replay = setupReplayContainer({});
+      const event = getTestEventIncremental({ timestamp: BASE_TIMESTAMP + MAX_REPLAY_DURATION - 1 });
+
+      expect(shouldAddEvent(replay, event)).toEqual(true);
+    });
   });
 });

@@ -201,7 +201,7 @@ describe('handleSentry', () => {
       expect(ref.spanRecorder.spans).toHaveLength(2);
       expect(ref.spanRecorder.spans).toEqual(
         expect.arrayContaining([
-          expect.objectContaining({ op: 'http.server', description: 'GET /users/[id]' }),
+          expect.objectContaining({ op: 'http.server', name: 'GET /users/[id]' }),
           expect.objectContaining({ op: 'http.server', description: 'GET api/users/details/[id]' }),
         ]),
       );
@@ -296,7 +296,7 @@ describe('handleSentry', () => {
       } catch (e) {
         expect(mockCaptureException).toBeCalledTimes(1);
         expect(addEventProcessorSpy).toBeCalledTimes(1);
-        expect(mockAddExceptionMechanism).toBeCalledTimes(1);
+        expect(mockAddExceptionMechanism).toBeCalledTimes(2);
         expect(mockAddExceptionMechanism).toBeCalledWith(
           {},
           { handled: false, type: 'sveltekit', data: { function: 'handle' } },

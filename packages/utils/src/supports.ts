@@ -4,6 +4,8 @@ import { getGlobalObject } from './worldwide';
 // eslint-disable-next-line deprecation/deprecation
 const WINDOW = getGlobalObject<Window>();
 
+declare const EdgeRuntime: string | undefined;
+
 export { supportsHistory } from './vendor/supportsHistory';
 
 /**
@@ -31,7 +33,7 @@ export function supportsDOMError(): boolean {
   try {
     // Chrome: VM89:1 Uncaught TypeError: Failed to construct 'DOMError':
     // 1 argument required, but only 0 present.
-    // @ts-ignore It really needs 1 argument, not 0.
+    // @ts-expect-error It really needs 1 argument, not 0.
     new DOMError('');
     return true;
   } catch (e) {
@@ -89,6 +91,10 @@ export function isNativeFetch(func: Function): boolean {
  * @returns true if `window.fetch` is natively implemented, false otherwise
  */
 export function supportsNativeFetch(): boolean {
+  if (typeof EdgeRuntime === 'string') {
+    return true;
+  }
+
   if (!supportsFetch()) {
     return false;
   }

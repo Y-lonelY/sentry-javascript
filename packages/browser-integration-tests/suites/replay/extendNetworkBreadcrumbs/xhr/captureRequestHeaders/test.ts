@@ -47,14 +47,14 @@ sentryTest('captures request headers', async ({ getLocalTestPath, page, browserN
 
     xhr.addEventListener('readystatechange', function () {
       if (xhr.readyState === 4) {
-        // @ts-ignore Sentry is a global
+        // @ts-expect-error Sentry is a global
         setTimeout(() => Sentry.captureException('test error', 0));
       }
     });
     /* eslint-enable */
   });
 
-  const request = await requestPromise;
+  const [request, replayReq1] = await Promise.all([requestPromise, replayRequestPromise1]);
   const eventData = envelopeRequestParser(request);
 
   expect(eventData.exception?.values).toHaveLength(1);
@@ -71,7 +71,6 @@ sentryTest('captures request headers', async ({ getLocalTestPath, page, browserN
     },
   });
 
-  const replayReq1 = await replayRequestPromise1;
   const { performanceSpans: performanceSpans1 } = getCustomRecordingEvents(replayReq1);
   expect(performanceSpans1.filter(span => span.op === 'resource.xhr')).toEqual([
     {
@@ -135,14 +134,15 @@ sentryTest(
 
       xhr.addEventListener('readystatechange', function () {
         if (xhr.readyState === 4) {
-          // @ts-ignore Sentry is a global
+          // @ts-expect-error Sentry is a global
           setTimeout(() => Sentry.captureException('test error', 0));
         }
       });
       /* eslint-enable */
     });
 
-    const request = await requestPromise;
+    const [request, replayReq1] = await Promise.all([requestPromise, replayRequestPromise1]);
+
     const eventData = envelopeRequestParser(request);
 
     expect(eventData.exception?.values).toHaveLength(1);
@@ -159,7 +159,6 @@ sentryTest(
       },
     });
 
-    const replayReq1 = await replayRequestPromise1;
     const { performanceSpans: performanceSpans1 } = getCustomRecordingEvents(replayReq1);
     expect(performanceSpans1.filter(span => span.op === 'resource.xhr')).toEqual([
       {

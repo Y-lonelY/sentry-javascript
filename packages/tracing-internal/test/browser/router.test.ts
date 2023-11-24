@@ -22,11 +22,11 @@ conditionalTest({ min: 16 })('instrumentRoutingWithDefaults', () => {
   const customStartTransaction = jest.fn().mockReturnValue({ finish: mockFinish });
   beforeEach(() => {
     const dom = new JSDOM();
-    // @ts-ignore need to override global document
+    // @ts-expect-error need to override global document
     global.document = dom.window.document;
-    // @ts-ignore need to override global document
+    // @ts-expect-error need to override global document
     global.window = dom.window;
-    // @ts-ignore need to override global document
+    // @ts-expect-error need to override global document
     global.location = dom.window.location;
 
     customStartTransaction.mockClear();
@@ -34,7 +34,7 @@ conditionalTest({ min: 16 })('instrumentRoutingWithDefaults', () => {
   });
 
   it('does not start transactions if global location is undefined', () => {
-    // @ts-ignore need to override global document
+    // @ts-expect-error need to override global document
     global.location = undefined;
     instrumentRoutingWithDefaults(customStartTransaction);
     expect(customStartTransaction).toHaveBeenCalledTimes(0);
@@ -46,6 +46,7 @@ conditionalTest({ min: 16 })('instrumentRoutingWithDefaults', () => {
     expect(customStartTransaction).toHaveBeenLastCalledWith({
       name: 'blank',
       op: 'pageload',
+      origin: 'auto.pageload.browser',
       metadata: { source: 'url' },
       startTimestamp: expect.any(Number),
     });
@@ -67,6 +68,7 @@ conditionalTest({ min: 16 })('instrumentRoutingWithDefaults', () => {
       expect(customStartTransaction).not.toHaveBeenLastCalledWith({
         name: 'blank',
         op: 'navigation',
+        origin: 'auto.navigation.browser',
         metadata: { source: 'url' },
       });
     });
@@ -80,6 +82,7 @@ conditionalTest({ min: 16 })('instrumentRoutingWithDefaults', () => {
       expect(customStartTransaction).toHaveBeenLastCalledWith({
         name: 'blank',
         op: 'navigation',
+        origin: 'auto.navigation.browser',
         metadata: { source: 'url' },
       });
     });

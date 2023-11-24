@@ -72,7 +72,8 @@ describe('vueRouterInstrumentation()', () => {
     onErrorCallback(testError);
 
     expect(captureExceptionSpy).toHaveBeenCalledTimes(1);
-    expect(captureExceptionSpy).toHaveBeenCalledWith(testError);
+    // second function is the scope callback
+    expect(captureExceptionSpy).toHaveBeenCalledWith(testError, expect.any(Function));
   });
 
   it.each([
@@ -108,6 +109,7 @@ describe('vueRouterInstrumentation()', () => {
           query: to.query,
         },
         op: 'navigation',
+        origin: 'auto.navigation.vue',
         tags: {
           'routing.instrumentation': 'vue-router',
         },
@@ -148,6 +150,7 @@ describe('vueRouterInstrumentation()', () => {
           source: 'url',
         },
         op: 'pageload',
+        origin: 'auto.pageload.vue',
         tags: {
           'routing.instrumentation': 'vue-router',
         },
@@ -194,6 +197,7 @@ describe('vueRouterInstrumentation()', () => {
         query: to.query,
       },
       op: 'navigation',
+      origin: 'auto.navigation.vue',
       tags: {
         'routing.instrumentation': 'vue-router',
       },
@@ -225,6 +229,7 @@ describe('vueRouterInstrumentation()', () => {
         query: to.query,
       },
       op: 'navigation',
+      origin: 'auto.navigation.vue',
       tags: {
         'routing.instrumentation': 'vue-router',
       },
@@ -259,6 +264,7 @@ describe('vueRouterInstrumentation()', () => {
         source: 'url',
       },
       op: 'pageload',
+      origin: 'auto.pageload.vue',
       tags: {
         'routing.instrumentation': 'vue-router',
       },
@@ -345,6 +351,7 @@ describe('vueRouterInstrumentation()', () => {
         query: to.query,
       },
       op: 'navigation',
+      origin: 'auto.navigation.vue',
       tags: {
         'routing.instrumentation': 'vue-router',
       },

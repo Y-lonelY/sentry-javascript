@@ -36,6 +36,12 @@ export {
 
 export { wrapServerComponentWithSentry } from './wrapServerComponentWithSentry';
 
+export { wrapRouteHandlerWithSentry } from './wrapRouteHandlerWithSentry';
+
 export { wrapApiHandlerWithSentryVercelCrons } from './wrapApiHandlerWithSentryVercelCrons';
 
 export { wrapMiddlewareWithSentry } from './wrapMiddlewareWithSentry';
+
+export { wrapPageComponentWithSentry } from './wrapPageComponentWithSentry';
+
+export { withServerActionInstrumentation } from './withServerActionInstrumentation';

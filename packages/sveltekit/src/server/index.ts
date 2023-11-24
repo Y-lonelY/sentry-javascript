@@ -6,12 +6,15 @@
 export {
   addGlobalEventProcessor,
   addBreadcrumb,
+  addIntegration,
   captureException,
   captureEvent,
   captureMessage,
   captureCheckIn,
+  withMonitor,
   configureScope,
   createTransport,
+  // eslint-disable-next-line deprecation/deprecation
   extractTraceparentData,
   getActiveTransaction,
   getHubFromCarrier,
@@ -44,6 +47,14 @@ export {
   deepReadDirSync,
   Integrations,
   Handlers,
+  setMeasurement,
+  getActiveSpan,
+  startSpan,
+  // eslint-disable-next-line deprecation/deprecation
+  startActiveSpan,
+  startInactiveSpan,
+  startSpanManual,
+  continueTrace,
 } from '@sentry/node';
 
 // We can still leave this for the carrier init and type exports

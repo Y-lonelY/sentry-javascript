@@ -1,7 +1,7 @@
 import { captureException, flush, getCurrentHub } from '@sentry/node';
 import { isThenable, logger } from '@sentry/utils';
 
-import { domainify, proxyFunction } from '../utils';
+import { domainify, markEventUnhandled, proxyFunction } from '../utils';
 import type { CloudEventFunction, CloudEventFunctionWithCallback, WrapperOptions } from './general';
 
 export type CloudEventFunctionWrapperOptions = WrapperOptions;
@@ -35,6 +35,7 @@ function _wrapCloudEventFunction(
     const transaction = hub.startTransaction({
       name: context.type || '<unknown>',
       op: 'function.gcp.cloud_event',
+      origin: 'auto.function.serverless.gcp_cloud_event',
       metadata: { source: 'component' },
     }) as ReturnType<typeof hub.startTransaction> | undefined;
 
@@ -49,7 +50,7 @@ function _wrapCloudEventFunction(
 
     const newCallback = domainify((...args: unknown[]) => {
       if (args[0] !== null && args[0] !== undefined) {
-        captureException(args[0]);
+        captureException(args[0], scope => markEventUnhandled(scope));
       }
       transaction?.finish();
 
@@ -67,13 +68,13 @@ function _wrapCloudEventFunction(
       try {
         fnResult = (fn as CloudEventFunctionWithCallback)(context, newCallback);
       } catch (err) {
-        captureException(err);
+        captureException(err, scope => markEventUnhandled(scope));
         throw err;
       }
 
       if (isThenable(fnResult)) {
         fnResult.then(null, err => {
-          captureException(err);
+          captureException(err, scope => markEventUnhandled(scope));
           throw err;
         });
       }

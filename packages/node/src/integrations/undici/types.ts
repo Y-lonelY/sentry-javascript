@@ -1,6 +1,7 @@
 // Vendored from https://github.com/DefinitelyTyped/DefinitelyTyped/blob/5a94716c6788f654aea7999a5fc28f4f1e7c48ad/types/node/diagnostics_channel.d.ts
 
 import type { Span } from '@sentry/core';
+import type { URL } from 'url';
 
 // License:
 // This project is licensed under the MIT license.
@@ -224,7 +225,7 @@ export interface UndiciRequest {
   method?: string;
   path: string;
   headers: string;
-  addHeader(key: string, value: string): Request;
+  addHeader(key: string, value: string): RequestWithSentry;
 }
 
 export interface UndiciResponse {
@@ -235,7 +236,6 @@ export interface UndiciResponse {
 
 export interface RequestWithSentry extends UndiciRequest {
   __sentry_span__?: Span;
-  __sentry_has_headers__?: boolean;
 }
 
 export interface RequestCreateMessage {

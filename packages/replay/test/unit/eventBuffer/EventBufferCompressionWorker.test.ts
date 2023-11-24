@@ -1,14 +1,14 @@
 import 'jsdom-worker';
 
-import pako from 'pako';
-
 import { BASE_TIMESTAMP } from '../..';
 import { REPLAY_MAX_EVENT_BUFFER_SIZE } from '../../../src/constants';
 import { createEventBuffer } from '../../../src/eventBuffer';
 import { EventBufferSizeExceededError } from '../../../src/eventBuffer/error';
 import { EventBufferProxy } from '../../../src/eventBuffer/EventBufferProxy';
+import { decompress } from '../../utils/compression';
+import { getTestEventIncremental } from '../../utils/getTestEvent';
 
-const TEST_EVENT = { data: {}, timestamp: BASE_TIMESTAMP, type: 3 };
+const TEST_EVENT = getTestEventIncremental({ timestamp: BASE_TIMESTAMP });
 
 describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
   it('adds events to event buffer with compression worker', async function () {
@@ -26,7 +26,7 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
 
     const result = await buffer.finish();
     expect(result).toBeInstanceOf(Uint8Array);
-    const restored = pako.inflate(result as Uint8Array, { to: 'string' });
+    const restored = decompress(result as Uint8Array);
 
     expect(restored).toEqual(JSON.stringify([TEST_EVENT, TEST_EVENT]));
   });
@@ -50,7 +50,7 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
 
     const result = await buffer.finish();
     expect(result).toBeInstanceOf(Uint8Array);
-    const restored = pako.inflate(result as Uint8Array, { to: 'string' });
+    const restored = decompress(result as Uint8Array);
 
     expect(restored).toEqual(JSON.stringify([{ ...TEST_EVENT, type: 2 }]));
   });
@@ -72,8 +72,8 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
 
     const result1 = (await promise1) as Uint8Array;
     const result2 = (await promise2) as Uint8Array;
-    const restored1 = pako.inflate(result1, { to: 'string' });
-    const restored2 = pako.inflate(result2, { to: 'string' });
+    const restored1 = decompress(result1);
+    const restored2 = decompress(result2);
 
     expect(restored1).toEqual(JSON.stringify([TEST_EVENT]));
     expect(restored2).toEqual(JSON.stringify([]));
@@ -99,9 +99,8 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
 
     const result1 = (await promise1) as Uint8Array;
     const result2 = (await promise2) as Uint8Array;
-
-    const restored1 = pako.inflate(result1, { to: 'string' });
-    const restored2 = pako.inflate(result2, { to: 'string' });
+    const restored1 = decompress(result1);
+    const restored2 = decompress(result2);
 
     expect(restored1).toEqual(JSON.stringify([TEST_EVENT]));
     expect(restored2).toEqual(JSON.stringify([{ ...TEST_EVENT, type: 5 }]));
@@ -120,7 +119,7 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
     await buffer.addEvent(TEST_EVENT);
     await buffer.addEvent(TEST_EVENT);
 
-    // @ts-ignore Mock this private so it triggers an error
+    // @ts-expect-error Mock this private so it triggers an error
     jest.spyOn(buffer._compression._worker, 'postMessage').mockImplementationOnce(() => {
       return Promise.reject('test worker error');
     });
@@ -141,7 +140,7 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
     await buffer.addEvent({ data: { o: 1 }, timestamp: BASE_TIMESTAMP, type: 3 });
     await buffer.addEvent({ data: { o: 2 }, timestamp: BASE_TIMESTAMP, type: 3 });
 
-    // @ts-ignore Mock this private so it triggers an error
+    // @ts-expect-error Mock this private so it triggers an error
     jest.spyOn(buffer._compression._worker, 'postMessage').mockImplementationOnce(() => {
       return Promise.reject('test worker error');
     });
@@ -158,11 +157,10 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
       expect(buffer).toBeInstanceOf(EventBufferProxy);
       await buffer.ensureWorkerIsLoaded();
 
-      const largeEvent = {
+      const largeEvent = getTestEventIncremental({
         data: { a: 'a'.repeat(REPLAY_MAX_EVENT_BUFFER_SIZE / 3) },
         timestamp: BASE_TIMESTAMP,
-        type: 3,
-      };
+      });
 
       await buffer.addEvent(largeEvent);
       await buffer.addEvent(largeEvent);
@@ -179,11 +177,10 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
       expect(buffer).toBeInstanceOf(EventBufferProxy);
       await buffer.ensureWorkerIsLoaded();
 
-      const largeEvent = {
+      const largeEvent = getTestEventIncremental({
         data: { a: 'a'.repeat(REPLAY_MAX_EVENT_BUFFER_SIZE / 3) },
         timestamp: BASE_TIMESTAMP,
-        type: 3,
-      };
+      });
 
       await buffer.addEvent(largeEvent);
       await buffer.addEvent(largeEvent);
@@ -201,11 +198,10 @@ describe('Unit | eventBuffer | EventBufferCompressionWorker', () => {
       expect(buffer).toBeInstanceOf(EventBufferProxy);
       await buffer.ensureWorkerIsLoaded();
 
-      const largeEvent = {
+      const largeEvent = getTestEventIncremental({
         data: { a: 'a'.repeat(REPLAY_MAX_EVENT_BUFFER_SIZE / 3) },
         timestamp: BASE_TIMESTAMP,
-        type: 3,
-      };
+      });
 
       await buffer.addEvent(largeEvent);
       await buffer.addEvent(largeEvent);

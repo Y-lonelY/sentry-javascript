@@ -11,6 +11,9 @@ export { init } from './sdk/init';
 export { INTEGRATIONS as Integrations };
 export { getAutoPerformanceIntegrations } from './integrations/getAutoPerformanceIntegrations';
 export * as Handlers from './sdk/handlers';
+export type { Span } from './types';
+
+export { startSpan, startInactiveSpan, getCurrentHub, getActiveSpan } from '@sentry/opentelemetry';
 
 export {
   makeNodeTransport,
@@ -29,17 +32,15 @@ export {
   close,
   configureScope,
   createTransport,
+  // eslint-disable-next-line deprecation/deprecation
   extractTraceparentData,
   flush,
   getActiveTransaction,
-  getHubFromCarrier,
-  getCurrentHub,
   Hub,
   lastEventId,
   makeMain,
   runWithAsyncContext,
   Scope,
-  startTransaction,
   SDK_VERSION,
   setContext,
   setExtra,
@@ -51,6 +52,7 @@ export {
   trace,
   withScope,
   captureCheckIn,
+  withMonitor,
 } from '@sentry/node';
 
 export type {
@@ -67,10 +69,8 @@ export type {
   Exception,
   Session,
   SeverityLevel,
-  Span,
   StackFrame,
   Stacktrace,
   Thread,
-  Transaction,
   User,
 } from '@sentry/node';

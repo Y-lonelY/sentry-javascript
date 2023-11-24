@@ -4,12 +4,14 @@ import { getActiveTransaction } from '@sentry/core';
 import type { Measurements } from '@sentry/types';
 import { browserPerformanceTimeOrigin, htmlTreeAsString, logger } from '@sentry/utils';
 
+import {
+  addClsInstrumentationHandler,
+  addFidInstrumentationHandler,
+  addLcpInstrumentationHandler,
+  addPerformanceInstrumentationHandler,
+} from '../instrument';
 import { WINDOW } from '../types';
-import { onCLS } from '../web-vitals/getCLS';
-import { onFID } from '../web-vitals/getFID';
-import { onLCP } from '../web-vitals/getLCP';
 import { getVisibilityWatcher } from '../web-vitals/lib/getVisibilityWatcher';
-import { observe } from '../web-vitals/lib/observe';
 import type { NavigatorDeviceMemory, NavigatorNetworkInformation } from '../web-vitals/types';
 import { _startChild, isMeasurementValue } from './utils';
 
@@ -22,7 +24,7 @@ function msToSec(time: number): number {
 }
 
 function getBrowserPerformanceAPI(): Performance | undefined {
-  // @ts-ignore we want to make sure all of these are available, even if TS is sure they are
+  // @ts-expect-error we want to make sure all of these are available, even if TS is sure they are
   return WINDOW && WINDOW.addEventListener && WINDOW.performance;
 }
 
@@ -40,21 +42,18 @@ let _clsEntry: LayoutShift | undefined;
 export function startTrackingWebVitals(): () => void {
   const performance = getBrowserPerformanceAPI();
   if (performance && browserPerformanceTimeOrigin) {
-    // @ts-ignore we want to make sure all of these are available, even if TS is sure they are
+    // @ts-expect-error we want to make sure all of these are available, even if TS is sure they are
     if (performance.mark) {
       WINDOW.performance.mark('sentry-tracing-init');
     }
-    _trackFID();
+    const fidCallback = _trackFID();
     const clsCallback = _trackCLS();
     const lcpCallback = _trackLCP();
 
     return (): void => {
-      if (clsCallback) {
-        clsCallback();
-      }
-      if (lcpCallback) {
-        lcpCallback();
-      }
+      fidCallback();
+      clsCallback();
+      lcpCallback();
     };
   }
 
@@ -65,7 +64,7 @@ export function startTrackingWebVitals(): () => void {
  * Start tracking long tasks.
  */
 export function startTrackingLongTasks(): void {
-  const entryHandler = (entries: PerformanceEntry[]): void => {
+  addPerformanceInstrumentationHandler('longtask', ({ entries }) => {
     for (const entry of entries) {
       const transaction = getActiveTransaction() as IdleTransaction | undefined;
       if (!transaction) {
@@ -77,20 +76,19 @@ export function startTrackingLongTasks(): void {
       transaction.startChild({
         description: 'Main UI thread blocked',
         op: 'ui.long-task',
+        origin: 'auto.ui.browser.metrics',
         startTimestamp: startTime,
         endTimestamp: startTime + duration,
       });
     }
-  };
-
-  observe('longtask', entryHandler);
+  });
 }
 
 /**
  * Start tracking interaction events.
  */
 export function startTrackingInteractions(): void {
-  const entryHandler = (entries: PerformanceEventTiming[]): void => {
+  addPerformanceInstrumentationHandler('event', ({ entries }) => {
     for (const entry of entries) {
       const transaction = getActiveTransaction() as IdleTransaction | undefined;
       if (!transaction) {
@@ -104,22 +102,18 @@ export function startTrackingInteractions(): void {
         transaction.startChild({
           description: htmlTreeAsString(entry.target),
           op: `ui.interaction.${entry.name}`,
+          origin: 'auto.ui.browser.metrics',
           startTimestamp: startTime,
           endTimestamp: startTime + duration,
         });
       }
     }
-  };
-
-  observe('event', entryHandler, { durationThreshold: 0 });
+  });
 }
 
 /** Starts tracking the Cumulative Layout Shift on the current page. */
-function _trackCLS(): ReturnType<typeof onCLS> {
-  // See:
-  // https://web.dev/evolving-cls/
-  // https://web.dev/cls-web-tooling/
-  return onCLS(metric => {
+function _trackCLS(): () => void {
+  return addClsInstrumentationHandler(({ metric }) => {
     const entry = metric.entries.pop();
     if (!entry) {
       return;
@@ -132,8 +126,8 @@ function _trackCLS(): ReturnType<typeof onCLS> {
 }
 
 /** Starts tracking the Largest Contentful Paint on the current page. */
-function _trackLCP(): ReturnType<typeof onLCP> {
-  return onLCP(metric => {
+function _trackLCP(): () => void {
+  return addLcpInstrumentationHandler(({ metric }) => {
     const entry = metric.entries.pop();
     if (!entry) {
       return;
@@ -146,8 +140,8 @@ function _trackLCP(): ReturnType<typeof onLCP> {
 }
 
 /** Starts tracking the First Input Delay on the current page. */
-function _trackFID(): void {
-  onFID(metric => {
+function _trackFID(): () => void {
+  return addFidInstrumentationHandler(({ metric }) => {
     const entry = metric.entries.pop();
     if (!entry) {
       return;
@@ -274,6 +268,7 @@ export function addPerformanceEntries(transaction: Transaction): void {
         description: 'first input delay',
         endTimestamp: fidMark.value + msToSec(_measurements['fid'].value),
         op: 'ui.action',
+        origin: 'auto.ui.browser.metrics',
         startTimestamp: fidMark.value,
       });
 
@@ -319,6 +314,7 @@ export function _addMeasureSpans(
     description: entry.name as string,
     endTimestamp: measureEndTimestamp,
     op: entry.entryType as string,
+    origin: 'auto.resource.browser.metrics',
     startTimestamp: measureStartTimestamp,
   });
 
@@ -354,6 +350,7 @@ function _addPerformanceNavigationTiming(
   }
   _startChild(transaction, {
     op: 'browser',
+    origin: 'auto.browser.browser.metrics',
     description: description || event,
     startTimestamp: timeOrigin + msToSec(start),
     endTimestamp: timeOrigin + msToSec(end),
@@ -365,6 +362,7 @@ function _addPerformanceNavigationTiming(
 function _addRequest(transaction: Transaction, entry: Record<string, any>, timeOrigin: number): void {
   _startChild(transaction, {
     op: 'browser',
+    origin: 'auto.browser.browser.metrics',
     description: 'request',
     startTimestamp: timeOrigin + msToSec(entry.requestStart as number),
     endTimestamp: timeOrigin + msToSec(entry.responseEnd as number),
@@ -372,6 +370,7 @@ function _addRequest(transaction: Transaction, entry: Record<string, any>, timeO
 
   _startChild(transaction, {
     op: 'browser',
+    origin: 'auto.browser.browser.metrics',
     description: 'response',
     startTimestamp: timeOrigin + msToSec(entry.responseStart as number),
     endTimestamp: timeOrigin + msToSec(entry.responseEnd as number),
@@ -423,6 +422,7 @@ export function _addResourceSpans(
     description: resourceName,
     endTimestamp,
     op: entry.initiatorType ? `resource.${entry.initiatorType}` : 'resource.other',
+    origin: 'auto.resource.browser.metrics',
     startTimestamp,
     data,
   });

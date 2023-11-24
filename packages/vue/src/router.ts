@@ -1,5 +1,6 @@
 import { captureException, WINDOW } from '@sentry/browser';
 import type { Transaction, TransactionContext, TransactionSource } from '@sentry/types';
+import { addExceptionMechanism } from '@sentry/utils';
 
 import { getActiveTransaction } from './tracing';
 
@@ -70,6 +71,7 @@ export function vueRouterInstrumentation(
       startTransaction({
         name: WINDOW.location.pathname,
         op: 'pageload',
+        origin: 'auto.pageload.vue',
         tags,
         metadata: {
           source: 'url',
@@ -77,7 +79,16 @@ export function vueRouterInstrumentation(
       });
     }
 
-    router.onError(error => captureException(error));
+    router.onError(error =>
+      captureException(error, scope => {
+        scope.addEventProcessor(event => {
+          addExceptionMechanism(event, { handled: false });
+          return event;
+        });
+
+        return scope;
+      }),
+    );
 
     router.beforeEach((to, from, next) => {
       // According to docs we could use `from === VueRouter.START_LOCATION` but I couldnt get it working for Vue 2
@@ -121,6 +132,7 @@ export function vueRouterInstrumentation(
         startTransaction({
           name: transactionName,
           op: 'navigation',
+          origin: 'auto.navigation.vue',
           tags,
           data,
           metadata: {

@@ -1,6 +1,11 @@
 import type { PlaywrightTestConfig } from '@playwright/test';
 import { devices } from '@playwright/test';
 
+// Fix urls not resolving to localhost on Node v17+
+// See: https://github.com/axios/axios/issues/3821#issuecomment-1413727575
+import { setDefaultResultOrder } from 'dns';
+setDefaultResultOrder('ipv4first');
+
 const testEnv = process.env.TEST_ENV;
 
 if (!testEnv) {
@@ -15,7 +20,7 @@ const port = 3030;
 const config: PlaywrightTestConfig = {
   testDir: './tests',
   /* Maximum time one test can run for. */
-  timeout: 60 * 1000,
+  timeout: 150_000,
   expect: {
     /**
      * Maximum time expect() should wait for the condition to be met.

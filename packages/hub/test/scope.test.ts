@@ -9,6 +9,7 @@ describe('Scope', () => {
   afterEach(() => {
     jest.resetAllMocks();
     jest.useRealTimers();
+    GLOBAL_OBJ.__SENTRY__ = GLOBAL_OBJ.__SENTRY__ || {};
     GLOBAL_OBJ.__SENTRY__.globalEventProcessors = undefined;
   });
 
@@ -16,11 +17,11 @@ describe('Scope', () => {
     test('it creates a propagation context', () => {
       const scope = new Scope();
 
-      // @ts-ignore asserting on private properties
+      // @ts-expect-error asserting on private properties
       expect(scope._propagationContext).toEqual({
         traceId: expect.any(String),
         spanId: expect.any(String),
-        sampled: false,
+        sampled: undefined,
         dsc: undefined,
         parentSpanId: undefined,
       });
@@ -229,7 +230,7 @@ describe('Scope', () => {
       const parentScope = new Scope();
       const scope = Scope.clone(parentScope);
 
-      // @ts-ignore accessing private property for test
+      // @ts-expect-error accessing private property for test
       expect(scope._propagationContext).toEqual(parentScope._propagationContext);
     });
   });
@@ -303,13 +304,13 @@ describe('Scope', () => {
       const scope = new Scope();
       const event: Event = {};
 
-      // @ts-ignore we want to be able to assign string value
+      // @ts-expect-error we want to be able to assign string value
       event.fingerprint = 'foo';
       await scope.applyToEvent(event).then(processedEvent => {
         expect(processedEvent!.fingerprint).toEqual(['foo']);
       });
 
-      // @ts-ignore we want to be able to assign string value
+      // @ts-expect-error we want to be able to assign string value
       event.fingerprint = 'bar';
       await scope.applyToEvent(event).then(processedEvent => {
         expect(processedEvent!.fingerprint).toEqual(['bar']);
@@ -442,7 +443,7 @@ describe('Scope', () => {
     expect(scope._propagationContext).toEqual({
       traceId: expect.any(String),
       spanId: expect.any(String),
-      sampled: false,
+      sampled: undefined,
     });
     // @ts-expect-error accessing private property
     expect(scope._propagationContext).not.toEqual(oldPropagationContext);
@@ -477,7 +478,7 @@ describe('Scope', () => {
     });
 
     test('given neither function, Scope or plain object, returns original scope', () => {
-      // @ts-ignore we want to be able to update scope with string
+      // @ts-expect-error we want to be able to update scope with string
       const updatedScope = scope.update('wat');
       expect(updatedScope).toEqual(scope);
     });
@@ -539,7 +540,7 @@ describe('Scope', () => {
       expect(updatedScope._level).toEqual('warning');
       expect(updatedScope._fingerprint).toEqual(['bar']);
       expect(updatedScope._requestSession.status).toEqual('ok');
-      // @ts-ignore accessing private property for test
+      // @ts-expect-error accessing private property for test
       expect(updatedScope._propagationContext).toEqual(localScope._propagationContext);
     });
 
