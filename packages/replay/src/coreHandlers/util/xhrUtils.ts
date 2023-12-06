@@ -1,6 +1,7 @@
 import type { Breadcrumb, TextEncoderInternal, XhrBreadcrumbData } from '@sentry/types';
-import { logger, SENTRY_XHR_DATA_KEY } from '@sentry/utils';
+import { SENTRY_XHR_DATA_KEY, logger } from '@sentry/utils';
 
+import { DEBUG_BUILD } from '../../debug-build';
 import type {
   NetworkMetaWarning,
   ReplayContainer,
@@ -37,7 +38,7 @@ export async function captureXhrBreadcrumbToReplay(
     const result = makeNetworkReplayBreadcrumb('resource.xhr', data);
     addNetworkBreadcrumb(options.replay, result);
   } catch (error) {
-    __DEBUG_BUILD__ && logger.error('[Replay] Failed to capture xhr breadcrumb', error);
+    DEBUG_BUILD && logger.error('[Replay] Failed to capture xhr breadcrumb', error);
   }
 }
 
@@ -60,7 +61,7 @@ export function enrichXhrBreadcrumb(
   const reqSize = getBodySize(input, options.textEncoder);
   const resSize = xhr.getResponseHeader('content-length')
     ? parseContentLengthHeader(xhr.getResponseHeader('content-length'))
-    : getBodySize(xhr.response, options.textEncoder);
+    : _getBodySize(xhr.response, xhr.responseType, options.textEncoder);
 
   if (reqSize !== undefined) {
     breadcrumb.data.request_body_size = reqSize;
@@ -153,13 +154,66 @@ function _getXhrResponseBody(xhr: XMLHttpRequest): [string | undefined, NetworkM
 
   // Try to manually parse the response body, if responseText fails
   try {
-    const response = xhr.response;
-    return getBodyString(response);
+    return _parseXhrResponse(xhr.response, xhr.responseType);
   } catch (e) {
     errors.push(e);
   }
 
-  __DEBUG_BUILD__ && logger.warn('[Replay] Failed to get xhr response body', ...errors);
+  DEBUG_BUILD && logger.warn('[Replay] Failed to get xhr response body', ...errors);
 
   return [undefined];
+}
+
+/**
+ * Get the string representation of the XHR response.
+ * Based on MDN, these are the possible types of the response:
+ * string
+ * ArrayBuffer
+ * Blob
+ * Document
+ * POJO
+ *
+ * Exported only for tests.
+ */
+export function _parseXhrResponse(
+  body: XMLHttpRequest['response'],
+  responseType: XMLHttpRequest['responseType'],
+): [string | undefined, NetworkMetaWarning?] {
+  try {
+    if (typeof body === 'string') {
+      return [body];
+    }
+
+    if (body instanceof Document) {
+      return [body.body.outerHTML];
+    }
+
+    if (responseType === 'json' && body && typeof body === 'object') {
+      return [JSON.stringify(body)];
+    }
+
+    if (!body) {
+      return [undefined];
+    }
+  } catch {
+    DEBUG_BUILD && logger.warn('[Replay] Failed to serialize body', body);
+    return [undefined, 'BODY_PARSE_ERROR'];
+  }
+
+  DEBUG_BUILD && logger.info('[Replay] Skipping network body because of body type', body);
+
+  return [undefined, 'UNPARSEABLE_BODY_TYPE'];
+}
+
+function _getBodySize(
+  body: XMLHttpRequest['response'],
+  responseType: XMLHttpRequest['responseType'],
+  textEncoder: TextEncoder | TextEncoderInternal,
+): number | undefined {
+  try {
+    const bodyStr = responseType === 'json' && body && typeof body === 'object' ? JSON.stringify(body) : body;
+    return getBodySize(bodyStr, textEncoder);
+  } catch {
+    return undefined;
+  }
 }

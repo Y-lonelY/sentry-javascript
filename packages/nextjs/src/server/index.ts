@@ -1,12 +1,13 @@
+import * as path from 'path';
 import { addTracingExtensions } from '@sentry/core';
 import { RewriteFrames } from '@sentry/integrations';
 import type { NodeOptions } from '@sentry/node';
-import { configureScope, getCurrentHub, init as nodeInit, Integrations } from '@sentry/node';
+import { Integrations, configureScope, getCurrentHub, init as nodeInit } from '@sentry/node';
 import type { EventProcessor } from '@sentry/types';
 import type { IntegrationWithExclusionOption } from '@sentry/utils';
 import { addOrUpdateIntegration, escapeStringForRegex, logger } from '@sentry/utils';
-import * as path from 'path';
 
+import { DEBUG_BUILD } from '../common/debug-build';
 import { devErrorSymbolicationEventProcessor } from '../common/devErrorSymbolicationEventProcessor';
 import { getVercelEnv } from '../common/getVercelEnv';
 import { buildMetadata } from '../common/metadata';
@@ -77,14 +78,14 @@ export function init(options: NodeOptions): void {
     autoSessionTracking: false,
   };
 
-  if (__DEBUG_BUILD__ && opts.debug) {
+  if (DEBUG_BUILD && opts.debug) {
     logger.enable();
   }
 
-  __DEBUG_BUILD__ && logger.log('Initializing SDK...');
+  DEBUG_BUILD && logger.log('Initializing SDK...');
 
   if (sdkAlreadyInitialized()) {
-    __DEBUG_BUILD__ && logger.log('SDK already initialized');
+    DEBUG_BUILD && logger.log('SDK already initialized');
     return;
   }
 
@@ -113,7 +114,7 @@ export function init(options: NodeOptions): void {
     }
   });
 
-  __DEBUG_BUILD__ && logger.log('SDK successfully initialized');
+  DEBUG_BUILD && logger.log('SDK successfully initialized');
 }
 
 function sdkAlreadyInitialized(): boolean {

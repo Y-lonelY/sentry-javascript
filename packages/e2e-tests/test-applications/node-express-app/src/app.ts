@@ -1,6 +1,6 @@
+import * as Integrations from '@sentry/integrations';
 import * as Sentry from '@sentry/node';
 import '@sentry/tracing';
-import * as Integrations from '@sentry/integrations';
 import express from 'express';
 
 declare global {
@@ -89,7 +89,7 @@ app.listen(port, () => {
   console.log(`Example app listening on port ${port}`);
 });
 
-Sentry.addGlobalEventProcessor(event => {
+Sentry.addEventProcessor(event => {
   global.transactionIds = global.transactionIds || [];
 
   if (event.type === 'transaction') {

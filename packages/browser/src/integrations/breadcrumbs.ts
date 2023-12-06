@@ -16,6 +16,7 @@ import type {
   XhrBreadcrumbHint,
 } from '@sentry/types/build/types/breadcrumb';
 import {
+  SENTRY_XHR_DATA_KEY,
   addClickKeypressInstrumentationHandler,
   addConsoleInstrumentationHandler,
   addFetchInstrumentationHandler,
@@ -26,10 +27,10 @@ import {
   logger,
   parseUrl,
   safeJoin,
-  SENTRY_XHR_DATA_KEY,
   severityLevelFromString,
 } from '@sentry/utils';
 
+import { DEBUG_BUILD } from '../debug-build';
 import { getClient } from '../exports';
 import { WINDOW } from '../helpers';
 
@@ -148,7 +149,7 @@ function _domBreadcrumb(dom: BreadcrumbsOptions['dom']): (handlerData: HandlerDa
     let maxStringLength =
       typeof dom === 'object' && typeof dom.maxStringLength === 'number' ? dom.maxStringLength : undefined;
     if (maxStringLength && maxStringLength > MAX_ALLOWED_STRING_LENGTH) {
-      __DEBUG_BUILD__ &&
+      DEBUG_BUILD &&
         logger.warn(
           `\`dom.maxStringLength\` cannot exceed ${MAX_ALLOWED_STRING_LENGTH}, but a value of ${maxStringLength} was configured. Sentry will use ${MAX_ALLOWED_STRING_LENGTH} instead.`,
         );

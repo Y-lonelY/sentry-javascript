@@ -1,3 +1,4 @@
+import type * as http from 'http';
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import {
   captureException,
@@ -22,9 +23,9 @@ import {
   logger,
   normalize,
 } from '@sentry/utils';
-import type * as http from 'http';
 
 import type { NodeClient } from './client';
+import { DEBUG_BUILD } from './debug-build';
 // TODO (v8 / XXX) Remove this import
 import type { ParseRequestOptions } from './requestDataDeprecated';
 import { isAutoSessionTrackingEnabled } from './sdk';
@@ -111,9 +112,9 @@ export function tracingHandler(): (
 export type RequestHandlerOptions =
   // TODO (v8 / XXX) Remove ParseRequestOptions type and eslint override
   // eslint-disable-next-line deprecation/deprecation
-  | (ParseRequestOptions | AddRequestDataToEventOptions) & {
-      flushTimeout?: number;
-    };
+  (ParseRequestOptions | AddRequestDataToEventOptions) & {
+    flushTimeout?: number;
+  };
 
 /**
  * Backwards compatibility shim which can be removed in v8. Forces the given options to follow the
@@ -178,7 +179,7 @@ export function requestHandler(
             _end.call(this, chunk, encoding, cb);
           })
           .then(null, e => {
-            __DEBUG_BUILD__ && logger.error(e);
+            DEBUG_BUILD && logger.error(e);
             _end.call(this, chunk, encoding, cb);
           });
       };

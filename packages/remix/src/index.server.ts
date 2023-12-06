@@ -1,8 +1,8 @@
-/* eslint-disable import/export */
 import type { NodeOptions } from '@sentry/node';
 import { configureScope, getCurrentHub, init as nodeInit } from '@sentry/node';
 import { logger } from '@sentry/utils';
 
+import { DEBUG_BUILD } from './utils/debug-build';
 import { instrumentServer } from './utils/instrumentServer';
 import { buildMetadata } from './utils/metadata';
 import type { RemixOptions } from './utils/remixOptions';
@@ -10,7 +10,9 @@ import type { RemixOptions } from './utils/remixOptions';
 // We need to explicitly export @sentry/node as they end up under `default` in ESM builds
 // See: https://github.com/getsentry/sentry-javascript/issues/8474
 export {
+  // eslint-disable-next-line deprecation/deprecation
   addGlobalEventProcessor,
+  addEventProcessor,
   addBreadcrumb,
   captureCheckIn,
   withMonitor,
@@ -75,7 +77,7 @@ export function init(options: RemixOptions): void {
   buildMetadata(options, ['remix', 'node']);
 
   if (sdkAlreadyInitialized()) {
-    __DEBUG_BUILD__ && logger.log('SDK already initialized');
+    DEBUG_BUILD && logger.log('SDK already initialized');
 
     return;
   }

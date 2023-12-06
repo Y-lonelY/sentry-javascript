@@ -2,6 +2,7 @@ import type { TextEncoderInternal } from '@sentry/types';
 import { dropUndefinedKeys, logger, stringMatchesSomePattern } from '@sentry/utils';
 
 import { NETWORK_BODY_MAX_SIZE, WINDOW } from '../../constants';
+import { DEBUG_BUILD } from '../../debug-build';
 import type {
   NetworkBody,
   NetworkMetaWarning,
@@ -74,14 +75,18 @@ export function getBodyString(body: unknown): [string | undefined, NetworkMetaWa
     if (body instanceof FormData) {
       return [_serializeFormData(body)];
     }
+
+    if (!body) {
+      return [undefined];
+    }
   } catch {
-    __DEBUG_BUILD__ && logger.warn('[Replay] Failed to serialize body', body);
+    DEBUG_BUILD && logger.warn('[Replay] Failed to serialize body', body);
     return [undefined, 'BODY_PARSE_ERROR'];
   }
 
-  __DEBUG_BUILD__ && logger.info('[Replay] Skipping network body because of body type', body);
+  DEBUG_BUILD && logger.info('[Replay] Skipping network body because of body type', body);
 
-  return [undefined];
+  return [undefined, 'UNPARSEABLE_BODY_TYPE'];
 }
 
 /** Merge a warning into an existing network request/response. */

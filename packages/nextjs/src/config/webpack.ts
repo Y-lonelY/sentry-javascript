@@ -1,14 +1,15 @@
+import * as fs from 'fs';
+import * as path from 'path';
 /* eslint-disable complexity */
 /* eslint-disable max-lines */
 import { getSentryRelease } from '@sentry/node';
 import { arrayify, dropUndefinedKeys, escapeStringForRegex, loadModule, logger } from '@sentry/utils';
 import type SentryCliPlugin from '@sentry/webpack-plugin';
 import * as chalk from 'chalk';
-import * as fs from 'fs';
-import * as path from 'path';
 import { sync as resolveSync } from 'resolve';
 import type { Compiler } from 'webpack';
 
+import { DEBUG_BUILD } from '../common/debug-build';
 import type { VercelCronsConfig } from '../common/types';
 // Note: If you need to import a type from Webpack, do it in `types.ts` and export it from there. Otherwise, our
 // circular dependency check thinks this file is importing from itself. See https://github.com/pahen/madge/issues/306.
@@ -121,8 +122,8 @@ export function constructWebpackConfigFunction(
     const middlewareLocationFolder = pagesDirPath
       ? path.join(pagesDirPath, '..')
       : appDirPath
-      ? path.join(appDirPath, '..')
-      : projectDir;
+        ? path.join(appDirPath, '..')
+        : projectDir;
 
     // Default page extensions per https://github.com/vercel/next.js/blob/f1dbc9260d48c7995f6c52f8fbcc65f08e627992/packages/next/server/config-shared.ts#L161
     const pageExtensions = userNextConfig.pageExtensions || ['tsx', 'ts', 'jsx', 'js'];
@@ -171,12 +172,12 @@ export function constructWebpackConfigFunction(
       );
     };
 
+    const possibleMiddlewareLocations = ['js', 'jsx', 'ts', 'tsx'].map(middlewareFileEnding => {
+      return path.join(middlewareLocationFolder, `middleware.${middlewareFileEnding}`);
+    });
     const isMiddlewareResource = (resourcePath: string): boolean => {
       const normalizedAbsoluteResourcePath = normalizeLoaderResourcePath(resourcePath);
-      return (
-        normalizedAbsoluteResourcePath.startsWith(middlewareLocationFolder + path.sep) &&
-        !!normalizedAbsoluteResourcePath.match(/[\\/]middleware\.(js|jsx|ts|tsx)$/)
-      );
+      return possibleMiddlewareLocations.includes(normalizedAbsoluteResourcePath);
     };
 
     const isServerComponentResource = (resourcePath: string): boolean => {
@@ -219,7 +220,7 @@ export function constructWebpackConfigFunction(
 
       let vercelCronsConfig: VercelCronsConfig = undefined;
       try {
-        if (process.env.VERCEL && userSentryOptions.automaticVercelMonitors !== false) {
+        if (process.env.VERCEL && userSentryOptions.automaticVercelMonitors) {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
           vercelCronsConfig = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'vercel.json'), 'utf8')).crons;
           if (vercelCronsConfig) {
@@ -510,8 +511,8 @@ async function addSentryToEntryProperty(
     nextRuntime === 'edge'
       ? getUserConfigFile(projectDir, 'edge')
       : isServer
-      ? getUserConfigFile(projectDir, 'server')
-      : getUserConfigFile(projectDir, 'client');
+        ? getUserConfigFile(projectDir, 'server')
+        : getUserConfigFile(projectDir, 'client');
 
   // we need to turn the filename into a path so webpack can find it
   const filesToInject = userConfigFile ? [`./${userConfigFile}`] : [];
@@ -528,7 +529,7 @@ async function addSentryToEntryProperty(
         // We always skip these, so it's not worth telling the user that we've done so
         !['pages/_app', 'pages/_document'].includes(entryPointName)
       ) {
-        __DEBUG_BUILD__ && logger.log(`Skipping Sentry injection for ${entryPointName.replace(/^pages/, '')}`);
+        DEBUG_BUILD && logger.log(`Skipping Sentry injection for ${entryPointName.replace(/^pages/, '')}`);
       }
     }
   }
@@ -662,7 +663,7 @@ function checkWebpackPluginOverrides(
   // warn if any of the default options for the webpack plugin are getting overridden
   const sentryWebpackPluginOptionOverrides = Object.keys(defaultOptions).filter(key => key in userOptions);
   if (sentryWebpackPluginOptionOverrides.length > 0) {
-    __DEBUG_BUILD__ &&
+    DEBUG_BUILD &&
       logger.warn(
         '[Sentry] You are overriding the following automatically-set SentryWebpackPlugin config options:\n' +
           `\t${sentryWebpackPluginOptionOverrides.toString()},\n` +
@@ -1070,7 +1071,7 @@ class SentryCliDownloadPlugin implements WebpackPluginInstance {
       if (!downloadingCliAttempted) {
         downloadingCliAttempted = true;
         // eslint-disable-next-line no-console
-        console.log(
+        logger.info(
           `\n${chalk.cyan('info')}  - ${chalk.bold(
             'Sentry binary to upload source maps not found.',
           )} Package manager post-install scripts are likely disabled or there is a caching issue. Manually downloading instead...`,
@@ -1086,12 +1087,12 @@ class SentryCliDownloadPlugin implements WebpackPluginInstance {
         cliDownloadPromise.then(
           () => {
             // eslint-disable-next-line no-console
-            console.log(`${chalk.cyan('info')}  - Sentry binary was successfully downloaded.\n`);
+            logger.info(`${chalk.cyan('info')}  - Sentry binary was successfully downloaded.\n`);
             return callback();
           },
           e => {
             // eslint-disable-next-line no-console
-            console.error(`${chalk.red('error')} - Sentry binary download failed:`, e);
+            logger.error(`${chalk.red('error')} - Sentry binary download failed:`, e);
             return callback();
           },
         );
